@@ -2,4 +2,7 @@
 This is an implementation of the paper, based on the [ESPnet](https://github.com/espnet/espnet).
 # Requirements
 Follow the [installation](https://espnet.github.io/espnet/installation.html) method of espnet.
+# Pretraining
+You should download [LibriSpeech](http://www.openslr.org/12/) and [LibriTTS](http://www.openslr.org/60/) manually.
+Go to egs/librispeech/asr1 and egs/libritts/tts, run pretrain_asr.sh and pretrain_tts.sh
 
