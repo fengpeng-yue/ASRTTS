@@ -9,6 +9,5 @@ Go to egs/librispeech/asr1 and egs/libritts/tts, run ./pretrain_asr.sh and ./pre
 # Joint training
 You should download [TED-LIUM-1](http://www.openslr.org/7/) manually.
 Go to egs/tedlium.
-You should run ./prepare_data.sh for preparing json file for training
-and then run ./joint_training.sh.
+Run ./prepare_data.sh for preparing json file for training, and then run ./joint_training.sh.
 
