@@ -8,6 +8,7 @@ You should download [LibriSpeech](http://www.openslr.org/12/) and [LibriTTS](htt
 Go to egs/librispeech/asr1 and egs/libritts/tts, run ./pretrain_asr.sh and ./pretrain_tts.sh
 # Joint training
 You should download [TED-LIUM-1](http://www.openslr.org/7/) manually.
+We give the punctuated TED_LIUM  text under egs/tedlium/data.
 Go to egs/tedlium.
 Run ./prepare_data.sh for preparing json file for training, and then run ./joint_training.sh.
 
