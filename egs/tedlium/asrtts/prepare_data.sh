@@ -1,10 +1,13 @@
+#!/bin/bash
+
+
 . ./path.sh
 . ./cmd.sh
 
 stage=5
 stop_stage=100
 nj=20
-datadir=/data1/fengpeng/data/TEDLIUM_release1
+datadir=
 asr_dir=../../librispeech/asr1
 tts_dir=../../libritts/tts1
 result_prefix=$(pwd)
@@ -127,7 +130,7 @@ if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
             ${nnet_dir} data/${name}_mfcc_16k \
             ${nnet_dir}/xvectors_${name}
     done
-    #cp ${feat_cv_dir}/data_phone.json ${feat_cv_dir}/data_phone_tts.json
+
 fi
 
 if [ ${stage} -le 5 ] && [ ${stop_stage} -ge 5 ]; then

@@ -1,11 +1,13 @@
+#!/bin/bash
+
+
 . ./path.sh
 . ./cmd.sh
 
 # general configuration
 backend=pytorch
-stage=0       # start from -1 if you need to start from data download
 stop_stage=100
-ngpu=4        # number of gpus ("0" uses cpu, otherwise use gpu)
+ngpu=8        # number of gpus 
 debugmode=1
 N=0            # number of minibatches to be used (mainly for debugging). "0" uses all minibatches.
 verbose=1      # verbose option
@@ -23,9 +25,9 @@ decode_asr_config=conf/decode_asr.yaml
 asr_opt=adadelta
 tts_opt=adam
 
-asr_batch_size=1
-tts_batch_size=1
-unpaired_batch_size=1
+asr_batch_size=20
+tts_batch_size=60
+unpaired_batch_size=60
 
 parallel_mode=ddp  #choice ["ddp","dp"]
 flag=

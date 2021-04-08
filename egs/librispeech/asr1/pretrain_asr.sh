@@ -1,13 +1,16 @@
+#!/bin/bash
+
+
 . ./path.sh
 . ./cmd.sh
 
-ngpu=4
-result_prefix=.
+
+result_prefix=$(pwd)
 # general configuration
 backend=pytorch
-stage=3       # start from -1 if you need to start from data download
+stage=0       # start from 0
 stop_stage=100
-#ngpu=1        # number of gpus ("0" uses cpu, otherwise use gpu)
+ngpu=4        # number of gpus ("0" uses cpu, otherwise use gpu)
 debugmode=1
 dumpdir=$result_prefix/dump   # directory to dump full features
 N=0            # number of minibatches to be used (mainly for debugging). "0" uses all minibatches.
@@ -25,7 +28,7 @@ decode_asr_config=conf/decode_asr.yaml
 fs=16000      # sampling frequency
 fmax=""       # maximum frequency
 fmin=""       # minimum frequency
-n_mels=80     # number of mel basis
+n_mels=128    # number of mel basis(if you haven't enough memory, you can set it to 80)
 n_fft=800    # number of fft points
 n_shift=160   # number of shift points
 win_length="" # window length
@@ -41,12 +44,8 @@ recog_model=model.acc.best # set a model to be used for decoding: 'model.acc.bes
 
 # Set this to somewhere where you want to put your data, or where
 # someone else has already put it.  You'll want to change this
-# if you're not on the CLSP grid.
-#datadir=/export/a15/vpanayotov/data
-datadir=/data1/corpus/Librispeech #
+datadir=
 
-# base url for downloads.
-data_url=www.openslr.org/resources/12
 
 # bpemode (unigram or bpe)
 nbpe=5000
@@ -95,7 +94,6 @@ fi
 
 if [ ${stage} -le 1 ] && [ ${stop_stage} -ge 1 ]; then
     echo "stage 1: Feature extraction"
-    # for x in dev_clean; do
     for x in dev_clean test_clean train_clean_100 train_clean_360; do
         if [ ! -s data/${x}/feats.scp ]; then
             make_fbank.sh --cmd "${train_cmd}" --nj ${nj} \

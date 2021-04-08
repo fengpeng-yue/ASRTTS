@@ -1,21 +1,16 @@
 #!/bin/bash
 
-# Copyright 2019 Nagoya University (Takenori Yoshimura)
-#  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
 . ./path.sh || exit 1;
-# . ./path_new_docker.sh
 . ./cmd.sh || exit 1;
 
 maxframes=2000
-#result_prefix=/data1/fengpeng/espnet-2021-4-6/egs/libritts/tts1
 result_prefix=$(pwd)
-ngpu=4
 # general configuration
 backend=pytorch
-stage=5
+stage=0
 stop_stage=100
-#ngpu=1       # number of gpu in training
+ngpu=4       # number of gpu in training
 nj=20        # number of parallel jobs
 dumpdir=$result_prefix/dump # directory to dump full features
 verbose=1    # verbose option (if set > 1, get more log)
@@ -26,7 +21,7 @@ resume=""    # the snapshot path to resume (if set empty, no effect)
 fs=16000      # sampling frequency
 fmax=""       # maximum frequency
 fmin=""       # minimum frequency
-n_mels=80     # number of mel basis
+n_mels=128     # number of mel basis(if you haven't enough memory, you can set it to 80)
 n_fft=800    # number of fft points
 n_shift=160   # number of shift points
 win_length="" # window length
@@ -45,13 +40,7 @@ griffin_lim_iters=64  # the number of iterations of Griffin-Lim
 
 # Set this to somewhere where you want to put your data, or where
 # someone else has already put it. You'll want to change this
-# if you're not on the CLSP grid.
-datadir=/data1/fengpeng/data
-#datadir=/data1/baibing/datasets
-
-# base url for downloads.
-data_url=www.openslr.org/resources/60
-
+datadir=
 
 #optimizer
 opt=lr-decay
@@ -99,15 +88,15 @@ dict=$result_prefix/data/lang_1${trans_type}/${train_set}_units.txt
 nnet_dir=$result_prefix/exp/spk_embedding
 
 
-# if [ ${stage} -le 0 ] && [ ${stop_stage} -ge 0 ]; then
-#     ### Task dependent. You have to make data the following preparation part by yourself.
-#     ### But you can utilize Kaldi recipes in most cases
-#     echo "stage 0: Data preparation"
-#     for part in dev-clean test-clean train-clean-100 train-clean-360; do
-#         # use underscore-separated names in data directories.
-#         local/data_prep.sh ${datadir}/LibriTTS/${part} data/${part//-/_}
-#     done
-# fi
+if [ ${stage} -le 0 ] && [ ${stop_stage} -ge 0 ]; then
+    ### Task dependent. You have to make data the following preparation part by yourself.
+    ### But you can utilize Kaldi recipes in most cases
+    echo "stage 0: Data preparation"
+    for part in dev-clean test-clean train-clean-100 train-clean-360; do
+        # use underscore-separated names in data directories.
+        local/data_prep.sh ${datadir}/LibriTTS/${part} data/${part//-/_}
+    done
+fi
 
 if [ ${stage} -le 1 ] && [ ${stop_stage} -ge 1 ]; then
     ### Task dependent. You have to design training and dev name by yourself.
@@ -115,7 +104,7 @@ if [ ${stage} -le 1 ] && [ ${stop_stage} -ge 1 ]; then
     echo "stage 1: Feature Generation"
 
     fbankdir=$result_prefix/fbank
-    for x in dev_clean; do
+    for x in dev_clean test_clean train_clean_100 train_clean_360; do
         make_fbank.sh --cmd "${train_cmd}" --nj ${nj} \
             --fs ${fs} \
             --fmax "${fmax}" \
@@ -172,40 +161,39 @@ fi
 if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
     echo "stage 4: x-vector extraction"
     # Make MFCCs and compute the energy-based VAD for each dataset
-    # mfccdir=mfcc
-    # vaddir=mfcc
-    # for name in ${train_set} ${dev_set} ${eval_set}; do
-    #     utils/copy_data_dir.sh data/${name} data/${name}_mfcc_16k
-    #     utils/data/resample_data_dir.sh 16000 data/${name}_mfcc_16k
-    #     steps/make_mfcc.sh \
-    #         --write-utt2num-frames true \
-    #         --mfcc-config conf/mfcc.conf \
-    #         --nj ${nj} --cmd "$train_cmd" \
-    #         data/${name}_mfcc_16k exp/make_mfcc_16k ${mfccdir}
-    #     utils/fix_data_dir.sh data/${name}_mfcc_16k
-    #     sid/compute_vad_decision.sh --nj ${nj} --cmd "$train_cmd" \
-    #         data/${name}_mfcc_16k exp/make_vad ${vaddir}
-    #     utils/fix_data_dir.sh data/${name}_mfcc_16k
-    # done
+    mfccdir=mfcc
+    vaddir=mfcc
+    for name in ${train_set} ${dev_set} ${eval_set}; do
+        utils/copy_data_dir.sh data/${name} data/${name}_mfcc_16k
+        utils/data/resample_data_dir.sh 16000 data/${name}_mfcc_16k
+        steps/make_mfcc.sh \
+            --write-utt2num-frames true \
+            --mfcc-config conf/mfcc.conf \
+            --nj ${nj} --cmd "$train_cmd" \
+            data/${name}_mfcc_16k exp/make_mfcc_16k ${mfccdir}
+        utils/fix_data_dir.sh data/${name}_mfcc_16k
+        sid/compute_vad_decision.sh --nj ${nj} --cmd "$train_cmd" \
+            data/${name}_mfcc_16k exp/make_vad ${vaddir}
+        utils/fix_data_dir.sh data/${name}_mfcc_16k
+    done
 
     # # # Check pretrained model existence
     nnet_dir=$result_prefix/exp/xvector_nnet_1a
-    # if [ ! -e ${nnet_dir} ]; then
-    #     echo "X-vector model does not exist. Download pre-trained model."
-    #     wget http://kaldi-asr.org/models/8/0008_sitw_v2_1a.tar.gz
-    #     tar xvf 0008_sitw_v2_1a.tar.gz
-    #     mv 0008_sitw_v2_1a/exp/xvector_nnet_1a exp
-    #     rm -rf 0008_sitw_v2_1a.tar.gz 0008_sitw_v2_1a
-    # fi
-    # # Extract x-vector
-    # for name in ${dev_set} ${eval_set} ${train_set}; do
-    #     sid/nnet3/xvector/extract_xvectors.sh --cmd "$train_cmd --mem 4G" --nj ${nj} \
-    #         ${nnet_dir} $result_prefix/data/${name}_mfcc_16k \
-    #         ${nnet_dir}/xvectors_${name}
-    # done
+    if [ ! -e ${nnet_dir} ]; then
+        echo "X-vector model does not exist. Download pre-trained model."
+        wget http://kaldi-asr.org/models/8/0008_sitw_v2_1a.tar.gz
+        tar xvf 0008_sitw_v2_1a.tar.gz
+        mv 0008_sitw_v2_1a/exp/xvector_nnet_1a exp
+        rm -rf 0008_sitw_v2_1a.tar.gz 0008_sitw_v2_1a
+    fi
+    # Extract x-vector
+    for name in ${dev_set} ${eval_set} ${train_set}; do
+        sid/nnet3/xvector/extract_xvectors.sh --cmd "$train_cmd --mem 4G" --nj ${nj} \
+            ${nnet_dir} $result_prefix/data/${name}_mfcc_16k \
+            ${nnet_dir}/xvectors_${name}
+    done
     for name in ${train_set} ${dev_set} ${eval_set}; do
         cp ${dumpdir}/${name}/data_phone.json ${dumpdir}/${name}/data_phone_tts.json
-        #if [ $name == ${train_paired_set} ]; then fname=${train_set}; else fname=$name; fi
         local/update_json.sh ${dumpdir}/${name}/data_phone_tts.json ${nnet_dir}/xvectors_${name}/xvector.scp
     done
 fi
@@ -234,7 +222,7 @@ if [ ${stage} -le 5 ] && [ ${stop_stage} -ge 5 ]; then
     echo "stage 4: Text-to-speech model training"
     tr_json=${feat_tr_dir}/data_phone_tts.json
     dt_json=${feat_dt_dir}/data_phone_tts.json
-    #${cuda_cmd} --gpu ${ngpu} ${expdir}/train.log \
+
     if [ $parallel_mode == 'ddp' ]; then
         train_cmd="python -m torch.distributed.launch \
         --nproc_per_node=$nproc_per_node \
