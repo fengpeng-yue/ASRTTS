@@ -6,8 +6,6 @@
 import argparse
 import codecs
 import nltk
-import logging
-import os
 
 from tacotron_cleaner.cleaners import custom_english_cleaners
 
@@ -29,16 +27,7 @@ except LookupError:
 def g2p(text):
     """Convert grapheme to phoneme."""
     tokens = filter(lambda s: s != " ", f_g2p(text))
-    tokens_new = []
-    #all_text = f_g2p(text)
-
-    for i,token in enumerate(tokens):
-        if token=="-":
-            token = '<space>'
-        tokens_new.append(token)
-    # print(tokens)
-    # os.exit(0)
-    return " ".join(tokens_new)
+    return " ".join(tokens)
 
 
 if __name__ == "__main__":
@@ -54,18 +43,10 @@ if __name__ == "__main__":
     args = parser.parse_args()
     with codecs.open(args.text, "r", "utf-8") as fid:
         for line in fid.readlines():
-            #id, _, content = line.split("|")
             id,content = line.split(" ",1)
             clean_content = custom_english_cleaners(content.rstrip())
             if args.trans_type == "phn":
                 text = clean_content.lower()
-                text = list(text)
-                for i,token in enumerate(text):
-                    if token == ' ':
-                        text[i] = ' - '
-                text = "".join(text)
-                #print(text)
-                #os.exit(0)
                 clean_content = g2p(text)
 
             print("%s %s" % (id, clean_content))

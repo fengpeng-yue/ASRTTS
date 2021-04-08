@@ -6,6 +6,7 @@
 """pytorch dataset and dataloader implementation for chainer training."""
 
 import torch
+import logging
 import torch.utils.data
 
 
@@ -44,7 +45,9 @@ class ChainerDataLoader(object):
     def __init__(self, **kwargs):
         """Init function."""
         self.loader = torch.utils.data.dataloader.DataLoader(**kwargs)
-        self.len = len(kwargs["dataset"])
+        # self.len = len(kwargs["dataset"])
+        self.len = len(self.loader)
+        logging.info("data length: %d" % self.len)
         self.current_position = 0
         self.epoch = 0
         self.iter = None
@@ -90,3 +93,73 @@ class ChainerDataLoader(object):
     def finalize(self):
         """Implement finalize function."""
         del self.loader
+
+
+class ChainerDataLoader_joint(object):
+    """Pytorch dataloader in chainer style.
+
+    Args:
+        all args for torch.utils.data.dataloader.Dataloader
+
+    """
+
+    def __init__(self,name,dataset,batch_size,collate_fn,num_workers=0,sampler=None,parallel_mode=None):
+        """Init function."""
+        self.loader = torch.utils.data.dataloader.DataLoader(dataset=dataset,
+                                                            batch_size=batch_size,
+                                                            collate_fn=collate_fn,
+                                                            num_workers=num_workers,
+                                                            sampler=sampler)
+        self.len = len(self.loader)
+        self.name = name
+        logging.info("name is %s,data length %d" % (name,self.len))
+        #self.len = len(kwargs["dataset"])
+        self.current_position = 0
+        self.epoch = 0
+        self.iter = None
+        self.parallel_mode = parallel_mode
+        self.kwargs = {'dataset':dataset,'batch_size':batch_size,'collate_fn':collate_fn,'sampler':sampler}
+
+    def next(self):
+        """Implement next function."""
+        if self.iter is None:
+            self.iter = iter(self.loader)
+        try:
+            ret = next(self.iter)
+        except StopIteration:
+            self.iter = None
+            return self.next()
+        self.current_position += 1
+        #logging.info("name is %s,current epoch is %d" % (self.name,self.epoch))
+        if self.current_position == self.len:
+            self.epoch = self.epoch + 1
+            self.current_position = 0
+        return ret
+
+    def __iter__(self):
+        """Implement iter function."""
+        for batch in self.loader:
+            yield batch
+
+    @property
+    def epoch_detail(self):
+        """Epoch_detail required by chainer."""
+        return self.epoch + self.current_position / self.len
+
+    def serialize(self, serializer):
+        """Serialize and deserialize function."""
+        epoch = serializer("epoch", self.epoch)
+        current_position = serializer("current_position", self.current_position)
+        self.epoch = epoch
+        self.current_position = current_position
+
+    def start_shuffle(self):
+        """Shuffle function for sortagrad."""
+        #if self.parallel_mode == 'dp':
+        self.kwargs["shuffle"] = True
+        self.loader = torch.utils.data.dataloader.DataLoader(**self.kwargs)
+
+    def finalize(self):
+        """Implement finalize function."""
+        del self.loader
+

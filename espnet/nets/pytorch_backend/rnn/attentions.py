@@ -157,7 +157,7 @@ class AttDot(torch.nn.Module):
 
         # NOTE consider zero padding when compute w.
         if self.mask is None:
-            self.mask = to_device(enc_hs_pad, make_pad_mask(enc_hs_len))
+            self.mask = to_device(self, make_pad_mask(enc_hs_len))
         e.masked_fill_(self.mask, -float("inf"))
         w = F.softmax(scaling * e, dim=1)
 
@@ -235,7 +235,7 @@ class AttAdd(torch.nn.Module):
 
         # NOTE consider zero padding when compute w.
         if self.mask is None:
-            self.mask = to_device(enc_hs_pad, make_pad_mask(enc_hs_len))
+            self.mask = to_device(self, make_pad_mask(enc_hs_len))
         e.masked_fill_(self.mask, -float("inf"))
         w = F.softmax(scaling * e, dim=1)
 
@@ -362,7 +362,7 @@ class AttLoc(torch.nn.Module):
 
         # NOTE: consider zero padding when compute w.
         if self.mask is None:
-            self.mask = to_device(enc_hs_pad, make_pad_mask(enc_hs_len))
+            self.mask = to_device(self, make_pad_mask(enc_hs_len))
         e.masked_fill_(self.mask, -float("inf"))
 
         # apply monotonic attention constraint (mainly for TTS)
@@ -446,9 +446,7 @@ class AttCov(torch.nn.Module):
         # initialize attention weight with uniform dist.
         if att_prev_list is None:
             # if no bias, 0 0-pad goes 0
-            att_prev_list = to_device(
-                enc_hs_pad, (1.0 - make_pad_mask(enc_hs_len).float())
-            )
+            att_prev_list = to_device(self, (1.0 - make_pad_mask(enc_hs_len).float()))
             att_prev_list = [
                 att_prev_list / att_prev_list.new(enc_hs_len).unsqueeze(-1)
             ]
@@ -469,7 +467,7 @@ class AttCov(torch.nn.Module):
 
         # NOTE consider zero padding when compute w.
         if self.mask is None:
-            self.mask = to_device(enc_hs_pad, make_pad_mask(enc_hs_len))
+            self.mask = to_device(self, make_pad_mask(enc_hs_len))
         e.masked_fill_(self.mask, -float("inf"))
         w = F.softmax(scaling * e, dim=1)
         att_prev_list += [w]
@@ -564,7 +562,7 @@ class AttLoc2D(torch.nn.Module):
         if att_prev is None:
             # B * [Li x att_win]
             # if no bias, 0 0-pad goes 0
-            att_prev = to_device(enc_hs_pad, (1.0 - make_pad_mask(enc_hs_len).float()))
+            att_prev = to_device(self, (1.0 - make_pad_mask(enc_hs_len).float()))
             att_prev = att_prev / att_prev.new(enc_hs_len).unsqueeze(-1)
             att_prev = att_prev.unsqueeze(1).expand(-1, self.att_win, -1)
 
@@ -586,7 +584,7 @@ class AttLoc2D(torch.nn.Module):
 
         # NOTE consider zero padding when compute w.
         if self.mask is None:
-            self.mask = to_device(enc_hs_pad, make_pad_mask(enc_hs_len))
+            self.mask = to_device(self, make_pad_mask(enc_hs_len))
         e.masked_fill_(self.mask, -float("inf"))
         w = F.softmax(scaling * e, dim=1)
 
@@ -683,7 +681,7 @@ class AttLocRec(torch.nn.Module):
         if att_prev_states is None:
             # initialize attention weight with uniform dist.
             # if no bias, 0 0-pad goes 0
-            att_prev = to_device(enc_hs_pad, (1.0 - make_pad_mask(enc_hs_len).float()))
+            att_prev = to_device(self, (1.0 - make_pad_mask(enc_hs_len).float()))
             att_prev = att_prev / att_prev.new(enc_hs_len).unsqueeze(-1)
 
             # initialize lstm states
@@ -714,7 +712,7 @@ class AttLocRec(torch.nn.Module):
 
         # NOTE consider zero padding when compute w.
         if self.mask is None:
-            self.mask = to_device(enc_hs_pad, make_pad_mask(enc_hs_len))
+            self.mask = to_device(self, make_pad_mask(enc_hs_len))
         e.masked_fill_(self.mask, -float("inf"))
         w = F.softmax(scaling * e, dim=1)
 
@@ -804,9 +802,7 @@ class AttCovLoc(torch.nn.Module):
         if att_prev_list is None:
             # if no bias, 0 0-pad goes 0
             mask = 1.0 - make_pad_mask(enc_hs_len).float()
-            att_prev_list = [
-                to_device(enc_hs_pad, mask / mask.new(enc_hs_len).unsqueeze(-1))
-            ]
+            att_prev_list = [to_device(self, mask / mask.new(enc_hs_len).unsqueeze(-1))]
 
         # att_prev_list: L' * [B x T] => cov_vec B x T
         cov_vec = sum(att_prev_list)
@@ -829,7 +825,7 @@ class AttCovLoc(torch.nn.Module):
 
         # NOTE consider zero padding when compute w.
         if self.mask is None:
-            self.mask = to_device(enc_hs_pad, make_pad_mask(enc_hs_len))
+            self.mask = to_device(self, make_pad_mask(enc_hs_len))
         e.masked_fill_(self.mask, -float("inf"))
         w = F.softmax(scaling * e, dim=1)
         att_prev_list += [w]
@@ -936,7 +932,7 @@ class AttMultiHeadDot(torch.nn.Module):
 
             # NOTE consider zero padding when compute w.
             if self.mask is None:
-                self.mask = to_device(enc_hs_pad, make_pad_mask(enc_hs_len))
+                self.mask = to_device(self, make_pad_mask(enc_hs_len))
             e.masked_fill_(self.mask, -float("inf"))
             w += [F.softmax(self.scaling * e, dim=1)]
 
@@ -1053,7 +1049,7 @@ class AttMultiHeadAdd(torch.nn.Module):
 
             # NOTE consider zero padding when compute w.
             if self.mask is None:
-                self.mask = to_device(enc_hs_pad, make_pad_mask(enc_hs_len))
+                self.mask = to_device(self, make_pad_mask(enc_hs_len))
             e.masked_fill_(self.mask, -float("inf"))
             w += [F.softmax(self.scaling * e, dim=1)]
 
@@ -1189,9 +1185,7 @@ class AttMultiHeadLoc(torch.nn.Module):
             for _ in six.moves.range(self.aheads):
                 # if no bias, 0 0-pad goes 0
                 mask = 1.0 - make_pad_mask(enc_hs_len).float()
-                att_prev += [
-                    to_device(enc_hs_pad, mask / mask.new(enc_hs_len).unsqueeze(-1))
-                ]
+                att_prev += [to_device(self, mask / mask.new(enc_hs_len).unsqueeze(-1))]
 
         c = []
         w = []
@@ -1210,7 +1204,7 @@ class AttMultiHeadLoc(torch.nn.Module):
 
             # NOTE consider zero padding when compute w.
             if self.mask is None:
-                self.mask = to_device(enc_hs_pad, make_pad_mask(enc_hs_len))
+                self.mask = to_device(self, make_pad_mask(enc_hs_len))
             e.masked_fill_(self.mask, -float("inf"))
             w += [F.softmax(scaling * e, dim=1)]
 
@@ -1345,9 +1339,7 @@ class AttMultiHeadMultiResLoc(torch.nn.Module):
             for _ in six.moves.range(self.aheads):
                 # if no bias, 0 0-pad goes 0
                 mask = 1.0 - make_pad_mask(enc_hs_len).float()
-                att_prev += [
-                    to_device(enc_hs_pad, mask / mask.new(enc_hs_len).unsqueeze(-1))
-                ]
+                att_prev += [to_device(self, mask / mask.new(enc_hs_len).unsqueeze(-1))]
 
         c = []
         w = []
@@ -1366,7 +1358,7 @@ class AttMultiHeadMultiResLoc(torch.nn.Module):
 
             # NOTE consider zero padding when compute w.
             if self.mask is None:
-                self.mask = to_device(enc_hs_pad, make_pad_mask(enc_hs_len))
+                self.mask = to_device(self, make_pad_mask(enc_hs_len))
             e.masked_fill_(self.mask, -float("inf"))
             w += [F.softmax(self.scaling * e, dim=1)]
 
@@ -1490,7 +1482,7 @@ class AttForward(torch.nn.Module):
 
         # NOTE: consider zero padding when compute w.
         if self.mask is None:
-            self.mask = to_device(enc_hs_pad, make_pad_mask(enc_hs_len))
+            self.mask = to_device(self, make_pad_mask(enc_hs_len))
         e.masked_fill_(self.mask, -float("inf"))
 
         # apply monotonic attention constraint (mainly for TTS)
@@ -1625,7 +1617,7 @@ class AttForwardTA(torch.nn.Module):
 
         # NOTE consider zero padding when compute w.
         if self.mask is None:
-            self.mask = to_device(enc_hs_pad, make_pad_mask(enc_hs_len))
+            self.mask = to_device(self, make_pad_mask(enc_hs_len))
         e.masked_fill_(self.mask, -float("inf"))
 
         # apply monotonic attention constraint (mainly for TTS)

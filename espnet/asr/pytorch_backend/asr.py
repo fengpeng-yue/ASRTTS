@@ -275,8 +275,6 @@ class CustomConverter(object):
         self.subsampling_factor = subsampling_factor
         self.ignore_id = -1
         self.dtype = dtype
-        self.test_aug = args.test_aug
-        self.specaug = SpecAug(freq_mask_width_range=(0,30),time_mask_width_range=(0,40))
 
     def __call__(self, batch, device=torch.device("cpu")):
         """Transform a batch and send it to a device.
@@ -330,14 +328,6 @@ class CustomConverter(object):
             ],
             self.ignore_id,
         ).to(device)
-        # testing for specaug
-        #logging.info(ilens)
-        if self.test_aug == True:
-            with torch.no_grad():
-                logging.info("using specuag under inner function")
-                xs_pad,ilens = self.specaug(xs_pad,ilens)
-        #logging.info(ilens)
-        #logging.info(xs_pad.requires_grad)
         return xs_pad, ilens, ys_pad
 
 

@@ -8,8 +8,9 @@
 . ./cmd.sh || exit 1;
 
 maxframes=2000
-result_prefix=/data1/fengpeng/espnet-2021-4-6/egs/libritts/tts1
-ngpu=1
+#result_prefix=/data1/fengpeng/espnet-2021-4-6/egs/libritts/tts1
+result_prefix=$(pwd)
+ngpu=4
 # general configuration
 backend=pytorch
 stage=5
@@ -60,7 +61,7 @@ decay_rate=0.5
 decay_steps=12500
 warmup_steps=50000
 
-batch_size=20
+batch_size=40
 
 
 #distributed training
@@ -188,7 +189,7 @@ if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
     # done
 
     # # # Check pretrained model existence
-    nnet_dir=exp/xvector_nnet_1a
+    nnet_dir=$result_prefix/exp/xvector_nnet_1a
     # if [ ! -e ${nnet_dir} ]; then
     #     echo "X-vector model does not exist. Download pre-trained model."
     #     wget http://kaldi-asr.org/models/8/0008_sitw_v2_1a.tar.gz
@@ -197,11 +198,11 @@ if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
     #     rm -rf 0008_sitw_v2_1a.tar.gz 0008_sitw_v2_1a
     # fi
     # # Extract x-vector
-    for name in ${dev_set} ${eval_set} ${train_set}; do
-        sid/nnet3/xvector/extract_xvectors.sh --cmd "$train_cmd --mem 4G" --nj ${nj} \
-            ${nnet_dir} data/${name}_mfcc_16k \
-            ${nnet_dir}/xvectors_${name}
-    done
+    # for name in ${dev_set} ${eval_set} ${train_set}; do
+    #     sid/nnet3/xvector/extract_xvectors.sh --cmd "$train_cmd --mem 4G" --nj ${nj} \
+    #         ${nnet_dir} $result_prefix/data/${name}_mfcc_16k \
+    #         ${nnet_dir}/xvectors_${name}
+    # done
     for name in ${train_set} ${dev_set} ${eval_set}; do
         cp ${dumpdir}/${name}/data_phone.json ${dumpdir}/${name}/data_phone_tts.json
         #if [ $name == ${train_paired_set} ]; then fname=${train_set}; else fname=$name; fi
@@ -261,7 +262,7 @@ if [ ${stage} -le 5 ] && [ ${stop_stage} -ge 5 ]; then
     --resume ${resume} \
     --train-json ${tr_json} \
     --valid-json ${dt_json} \
-    --num-iter-processes 0 \
+    --num-iter-processes 8 \
     --parallel-mode ${parallel_mode} \
     --batch-size ${batch_size} \
     --config ${train_config} 

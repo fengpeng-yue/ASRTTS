@@ -5,7 +5,7 @@ ngpu=4
 result_prefix=.
 # general configuration
 backend=pytorch
-stage=1       # start from -1 if you need to start from data download
+stage=3       # start from -1 if you need to start from data download
 stop_stage=100
 #ngpu=1        # number of gpus ("0" uses cpu, otherwise use gpu)
 debugmode=1
@@ -94,7 +94,7 @@ if [ ${stage} -le 0 ] && [ ${stop_stage} -ge 0 ]; then
 fi
 
 if [ ${stage} -le 1 ] && [ ${stop_stage} -ge 1 ]; then
-    echo "stage 0: Feature extraction"
+    echo "stage 1: Feature extraction"
     # for x in dev_clean; do
     for x in dev_clean test_clean train_clean_100 train_clean_360; do
         if [ ! -s data/${x}/feats.scp ]; then

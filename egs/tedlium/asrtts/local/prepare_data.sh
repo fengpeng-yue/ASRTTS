@@ -54,7 +54,10 @@ for set in dev test train; do
            printf("\n");
          }' | tr '{}' '[]' | sed 's/ \[[A-Z]*\] / /g' | sed 's/ \[[A-Z]*\]$//g' | sed 's/ \[[A-Z]*\]/ /g' |  sort -k1,1 > $dir/text_tmp || exit 1
 
-  python local/changer_upper.py $dir/text_tmp  $dir/text
+  utils/filter_scp.pl -f 1 $dir/text_punc $dir/text_tmp |  sort -k1,1 > $dir/text_lower
+  utils/filter_scp.pl -f 1 $dir/text_lower  $dir/text_punc > $dir/text_punc_tmp
+  python local/changer_upper.py $dir/text_lower  $dir/text
+  rm $dir/text_tmp $dir/text_lower && mv $dir/text_punc_tmp $dir/text_punc
 
   # cat $dir/stm | grep -v -e 'ignore_time_segment_in_scoring' -e ';;' | \
   #   awk '{ printf ("%s-%07d-%07d", $1, $4*100, $5*100);
@@ -63,24 +66,17 @@ for set in dev test train; do
   #        }' | tr '{}' '[]' | sort -k1,1 > $dir/text || exit 1
 
   # Prepare 'segments', 'utt2spk', 'spk2utt'
+  
+
   cat $dir/text | cut -d" " -f 1 | awk -F"-" '{printf("%s %s %07.2f %07.2f\n", $0, $1, $2/100.0, $3/100.0)}' > $dir/segments
-  # cat $dir/segments | awk '{print $1, $2}' > $dir/utt2spk
-  # cat $dir/utt2spk | utils/utt2spk_to_spk2utt.pl > $dir/spk2utt
+
 
   # Prepare 'wav.scp', 'reco2file_and_channel'
   # cat $dir/spk2utt | awk -v set=$set -v pwd=$PWD '{ printf("%s sph2pipe -f wav -p %s/db/TEDLIUM_release1/%s/sph/%s.sph |\n", $1, pwd, set, $1); }' > $dir/wav.scp
   # cat $dir/wav.scp | awk '{ print $1, $1, "A"; }' > $dir/reco2file_and_channel
-  cat $dir/text | awk -F " " '{print $1}' | sed 's#$# /data/t-fyue/disk3/TED_1/TEDLIUM_release1/pppp/sph/segments/#g' | \
-  awk -F " " '{print $0$1}' | sed "s/$/.wav/g" | sort -k1,1 > $dir/wav_tmp
-  if [ $set == 'train' ]; then
-  cat $dir/wav_tmp | sed "s/pppp/train/g" >  $dir/wav.scp
-  fi
-  if [ $set == 'test' ]; then
-  cat $dir/wav_tmp | sed "s/pppp/test/g" >  $dir/wav.scp
-  fi
-  if [ $set == 'dev' ]; then
-  cat $dir/wav_tmp | sed "s/pppp/dev/g" >  $dir/wav.scp
-  fi
+
+  cat $dir/text | awk -v prefix="$data_org/$set/sph/segments/" -F " " '{printf("%s %s\n", $1, prefix)}' | \
+  awk -F " " '{print $0$1}' | sed "s/$/.wav/g" | sort -k1,1 > $dir/wav.scp
 
   cat $dir/wav.scp | awk -F " " '{print $1}' | awk -F "-" '{print $0,$1}' | sort -u >  $dir/utt2spk
   cat $dir/utt2spk | utils/utt2spk_to_spk2utt.pl > $dir/spk2utt
