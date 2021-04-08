@@ -4,7 +4,7 @@
 . ./path.sh
 . ./cmd.sh
 
-stage=5
+stage=0
 stop_stage=100
 nj=20
 datadir=
