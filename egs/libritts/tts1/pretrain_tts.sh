@@ -62,10 +62,6 @@ tag=baseline # tag for managing experiments. # tag for managing experiments.
 #gudied loss
 use_guided_attn_loss=true
 
-
-
-. utils/parse_options.sh || exit 1;
-
 # Set bash to 'debug' mode, it will exit on :
 # -e 'error', -u 'undefined variable', -o ... 'error in pipeline', -x 'print commands',
 set -e
@@ -80,12 +76,10 @@ feat_tr_dir=${dumpdir}/${train_set}; mkdir -p ${feat_tr_dir}
 feat_dt_dir=${dumpdir}/${dev_set}; mkdir -p ${feat_dt_dir}
 feat_ev_dir=${dumpdir}/${eval_set}; mkdir -p ${feat_ev_dir}
 
-
-
 trans_type="phn"
 dict=$result_prefix/data/lang_1${trans_type}/${train_set}_units.txt
-#nnet_dir=$result_prefix/exp/xvector_nnet_1a
-nnet_dir=$result_prefix/exp/spk_embedding
+. utils/parse_options.sh || exit 1;
+
 
 
 if [ ${stage} -le 0 ] && [ ${stop_stage} -ge 0 ]; then

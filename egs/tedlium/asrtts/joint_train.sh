@@ -45,7 +45,7 @@ method="domain" #[domain or speaker]
 shot_num=5      #[1 or 5]
 nnodes=1
 result_prefix=$(pwd)
-. utils/parse_options.sh || exit 1;
+
 
 
 asr_dir=../../librispeech/asr1
@@ -69,7 +69,7 @@ feat_tr_up_dir=$result_prefix/dump/train
 asrttsexpdir=$result_prefix/exp/asrtts_joint_traing_$flag
 
 
-
+. utils/parse_options.sh || exit 1;
 
 # Set bash to 'debug' mode, it will exit on :
 # -e 'error', -u 'undefined variable', -o ... 'error in pipeline', -x 'print commands',
