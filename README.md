@@ -6,8 +6,8 @@ Follow the [installation](https://espnet.github.io/espnet/installation.html) met
 You should use torch==1.7.1.
 # Pretraining
 You should download [LibriSpeech](http://www.openslr.org/12/) and [LibriTTS](http://www.openslr.org/60/) manually.  
-LibriSpeech: run egs/librispeech/asr/pretrain_asr.sh(The recipe train ASR model on LibriSpeech train-clean-460)  
-LibriTTS: run egs/libritts/tts/pretrain_tts.sh(The recipe train ASR model on LibriTTS train-clean-460)
+LibriSpeech: run ./pretrain_asr.sh under egs/librispeech/asr (The recipe train ASR model on LibriSpeech train-clean-460)  
+LibriTTS: run ./pretrain_tts.sh under egs/libritts/tts (The recipe train ASR model on LibriTTS train-clean-460)
 # Joint training
 You should download [TED-LIUM-1](http://www.openslr.org/7/) manually.
 We give the punctuated TED_LIUM  text under egs/tedlium/data path.  
