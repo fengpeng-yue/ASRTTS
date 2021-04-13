@@ -12,7 +12,7 @@ LibriTTS: run ./pretrain_tts.sh under egs/libritts/tts (The recipe train TTS mod
 You should download [TED-LIUM-1](http://www.openslr.org/7/) manually.
 We give the punctuated TED_LIUM  text under egs/tedlium/data path.  
 Execution directory(egs/tedlium/asrtts):  
-Run ./prepare_data.sh for preparing json file for training, and then run ./joint_training.sh for jointly training.
+Run ./prepare_data.sh for preparing json file for training, and then run ./joint_training.sh for joint training.
 ## Experimental options in joint_training.sh
 ```
 method=domain # for domain adaptation experiment
