@@ -13,15 +13,14 @@ You should download [TED-LIUM-1](http://www.openslr.org/7/) manually.
 We give the punctuated TED_LIUM  text under egs/tedlium/data path.  
 Execution directory(egs/tedlium/asrtts):  
 Run ./prepare_data.sh for preparing json file for training, and then run ./joint_training.sh for joint training.
-## Experimental options in joint_training.sh
+## Experimental options in joint_training.sh for three-stage training
 ### Stage 1:
-update_asr=true 
-
-update_tts=false 
-update_tts2asr=true 
-filter_data=true 
-filter_thre=0.58  
-unpaired_aug=true  
+update_asr=true  
+update_tts=false  
+update_tts2asr=true  
+filter_data=true  
+filter_thre=0.58   
+unpaired_aug=true   
 
 ### Stage 2:
 asrexpdir=    # change the path of asr baseline to the asr adaptation
