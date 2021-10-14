@@ -603,8 +603,7 @@ class Tacotron2(torch.nn.Module):
             return cbhg_outs, probs, att_ws
         else:
             return outs, probs, att_ws
-    #@autocast()
-    def generate(self, xs, ilens, spembs=None, softargmax=False):
+    def generate(self, xs, ilens, spembs=None,filter_data=False,filter_thre=0.4, softargmax=False):
         """TACOTRON2 FEATURE GENERATION
 
         :param torch.Tensor xs: batch of padded character ids (B, Tmax)
@@ -622,21 +621,60 @@ class Tacotron2(torch.nn.Module):
         # check ilens type (should be list of int)
         if isinstance(ilens, torch.Tensor) or isinstance(ilens, np.ndarray):
             ilens = list(map(int, ilens))
-        hs, hlens = self.enc(xs, ilens, softargmax=softargmax)
-        # logging.info(hs)
-        # logging.info(hlens)
+        hs, hlens = self.enc(xs, ilens)
         if self.spk_embed_dim is not None:
-            spembs= spembs.unsqueeze(1).expand(-1, hs.size(1), -1)
-            #spembs = F.normalize(spembs).unsqueeze(1).expand(-1, hs.size(1), -1)
+            spembs = F.normalize(spembs).unsqueeze(1).expand(-1, hs.size(1), -1)
             hs = torch.cat([hs, spembs], dim=-1)
         hlens = hlens.to(hs.device).float()
-        outs, logits, ylens,filter_indice = self.dec.generate(hs, hlens)
+        outs, logits, ylens, att_ws= self.dec.generate(hs, hlens)
         mask =  make_mask(ylens).to(outs.device).unsqueeze(-2)
         mask = mask.eq(0).transpose(-2,-1)
         outs = outs.masked_fill(mask,0)
+        
         # logging.info(outs)
-        return outs, logits, ylens, filter_indice
+        ylens = torch.tensor(ylens).to(att_ws.device)
+        if filter_data:
+            filter_index = self.filter_data(att_ws,ylens,filter_thre)
+        else:
+            filter_index = torch.ones_like(ylens).bool().to(ylens.device)
+        return outs, None, ylens, filter_index
+        
+    def filter_data(self,att_ws,ylens,filter_thre):
+        logging.info(att_ws.size())
+        logging.info(att_ws.max(dim=-1)[0].size())
 
+        mask =  make_mask(ylens//2).to(att_ws.device).unsqueeze(-2)
+        mask = mask.eq(0).transpose(-2,-1)
+        att_ws = att_ws.masked_fill(mask,0)
+        att_ws = 2 * att_ws.max(dim=-1)[0].sum(1) / ylens
+        filter_index = att_ws>=filter_thre
+        if filter_index.all() == False:
+            logging.info("filter some data now")
+            logging.info(filter_index)
+        return filter_index
+
+    def save_wav(self, ylens, outs, filter_index, att_ws):
+        # for debug
+        if filter_index.all() == False:
+            from kaldiio import WriteHelper
+            from matplotlib import pyplot as plt 
+            self.count = self.count + 1
+            with WriteHelper('ark,scp:/path/file.ark,/path/file.scp') as writer:
+                for index,length in enumerate(ylens.tolist()):
+                    wav_name = "wav_device_%s_count_%d_index_%d" % (str(ylens.device),self.count,index)
+                    save_out = outs[index][:length].detach().cpu().float().numpy()
+                    writer(wav_name,save_out)
+
+            mask =  make_mask(ylens//2).to(att_ws.device).unsqueeze(-2)
+            mask = mask.eq(0).transpose(-2,-1)
+            att_ws = att_ws.masked_fill(mask,0)
+            for index in range(att_ws.size(0)):
+                save_path = "att_w_device_%s_count_%d_index_%d" % (str(att_ws.device),self.count,index)
+                att_w = att_ws[index].detach().cpu().float().numpy()
+                plt.imshow(att_w,aspect="auto",origin="lower")
+                plt.xlabel("decoder")
+                plt.ylabel("encoder")
+                plt.savefig(save_path)
 
     def calculate_all_attentions(self, xs, ilens, ys, labels, olens, spembs=None):
         """Tacotron2 forward computation

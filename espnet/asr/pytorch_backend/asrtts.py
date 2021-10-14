@@ -9,6 +9,7 @@ import json
 import logging
 import math
 import os
+import sys
 
 # chainer related
 import chainer
@@ -36,9 +37,9 @@ from espnet.asr.asr_utils import torch_resume
 from espnet.asr.asr_utils import torch_save
 from espnet.asr.asr_utils import snapshot_object
 from espnet.asr.asr_utils import torch_snapshot
+from espnet.asr.pytorch_backend.asr_init import freeze_modules
 from espnet.asr.asrtts_utils import torch_joint_resume
 from espnet.asr.asrtts_utils import torch_joint_snapshot
-from espnet.asr.asrtts_utils import freeze_parameters
 from espnet.asr.asrtts_utils import merge_batchsets
 from espnet.asr.asrtts_utils import remove_output_layer
 from espnet.nets.pytorch_backend.e2e_asr import pad_list
@@ -80,14 +81,16 @@ import matplotlib
 import numpy as np
 matplotlib.use('Agg')
 
-REPORT_INTERVAL = 100
+REPORT_INTERVAL = 1
+REPORT_TYPE = "epoch"
 grads = {}
 
 class Reporter(chainer.Chain):
     """A chainer reporter wrapper"""
 
-    def report(self,kl_loss, tts2asr_loss_asr, asr_tts_loss, tts2asr_acc_asr, tts2asr_acc_tts, tts2asr_loss_tts):
+    def report(self,kl_loss, ppl, tts2asr_loss_asr, asr_tts_loss, tts2asr_acc_asr, tts2asr_acc_tts, tts2asr_loss_tts):
         reporter_module.report({'kl_loss': kl_loss}, self)
+        reporter_module.report({'asr_ppl': ppl}, self)
         reporter_module.report({'tts2asr_loss_asr': tts2asr_loss_asr}, self)
         reporter_module.report({'asr2tts_loss':asr_tts_loss})
         reporter_module.report({'tts2asr_acc_asr': tts2asr_acc_asr}, self)
@@ -107,27 +110,54 @@ class Reporter(chainer.Chain):
         reporter_module.report({'l1_loss':l1_loss},self)
         reporter_module.report({'bce_loss':bce_loss},self)
 
-        
+class CustomEvaluator_tts(extensions.Evaluator):
+    '''Custom evaluater for pytorch'''
+    def __init__(self,args,tts_model, tts_iterator,target, tts_converter,device):
+        super(CustomEvaluator_tts, self).__init__(tts_iterator, target)
+        self.tts_model = tts_model
+        self.tts_converter = tts_converter
+        self.device = device
+        self.args = args
+
+    # The core part of the update routine can be customized by overriding
+    def evaluate(self):
+        tts_iterator = self._iterators['main']
+        if self.eval_hook:
+            self.eval_hook(self)
+        if hasattr(tts_iterator, 'reset'):
+            tts_iterator.reset()
+            tts_it = tts_iterator
+        else:
+            tts_it = copy.copy(tts_iterator)
+        summary = reporter_module.DictSummary()
+        self.tts_model.eval()
+        with torch.no_grad():
+            for batch in tts_it:
+                tts_observation = {}
+                with reporter_module.report_scope(tts_observation):
+                    # read scp files
+                    # x: original json with loaded features
+                    #    will be converted to chainer variable later
+                    xs_pad, ilens, ys_pad, labels, olens, spembs= self.tts_converter(batch, self.device)
+                    self.tts_model(xs_pad, ilens, ys_pad, labels, olens, spembs)
+                summary.add(tts_observation)
+        self.tts_model.train()
+        return summary.compute_mean()    
 
         
-class CustomEvaluator(extensions.Evaluator):
+class CustomEvaluator_asr(extensions.Evaluator):
     '''Custom evaluater for pytorch'''
 
-    def __init__(self,args, model,tts_model,asr_iterator, tts_iterator,target, converter,tts_converter, device):
-        super(CustomEvaluator, self).__init__(asr_iterator, target)
+    def __init__(self,args, model,asr_iterator,target, converter, device):
+        super(CustomEvaluator_asr, self).__init__(asr_iterator, target)
         self.model = model
-        self.tts_model = tts_model
         self.converter = converter
-        self.tts_converter = tts_converter
-        self.tts_iterator = tts_iterator
         self.device = device
         self.args = args
 
     # The core part of the update routine can be customized by overriding
     def evaluate(self):
         asr_iterator = self._iterators['main']
-        tts_iterator = self.tts_iterator['main']
-
         if self.eval_hook:
             self.eval_hook(self)
 
@@ -136,41 +166,21 @@ class CustomEvaluator(extensions.Evaluator):
             asr_it = asr_iterator
         else:
             asr_it = copy.copy(asr_iterator)
-
-        if hasattr(tts_iterator, 'reset'):
-            tts_iterator.reset()
-            tts_it = tts_iterator
-        else:
-            tts_it = copy.copy(tts_iterator)
-
         summary = reporter_module.DictSummary()
 
         self.model.eval()
-        self.tts_model.eval()
         with torch.no_grad():
-            if self.args.update_asr:
-                for batch in asr_it:
-                    asr_observation = {}
-                    with reporter_module.report_scope(asr_observation):
-                        # read scp files
-                        # x: original json with loaded features
-                        #    will be converted to chainer variable later
-                        xs_pad, ilens, ys_pad= self.converter(batch, self.device)
-                        self.model(xs_pad, ilens, ys_pad)
-                    summary.add(asr_observation)
-            if self.args.update_tts:
-                for batch in tts_it:
-                    tts_observation = {}
-                    with reporter_module.report_scope(tts_observation):
-                        # read scp files
-                        # x: original json with loaded features
-                        #    will be converted to chainer variable later
-                        xs_pad, ilens, ys_pad, labels, olens, spembs= self.tts_converter(batch, self.device)
-                        self.tts_model(xs_pad, ilens, ys_pad, labels, olens, spembs)
-                    summary.add(tts_observation)
+            for batch in asr_it:
+                asr_observation = {}
+                with reporter_module.report_scope(asr_observation):
+                    # read scp files
+                    # x: original json with loaded features
+                    #    will be converted to chainer variable later
+                    xs_pad, ilens, ys_pad= self.converter(batch, self.device)
+                    self.model(xs_pad, ilens, ys_pad)
+                summary.add(asr_observation)
             
         self.model.train()
-        self.tts_model.train()
         return summary.compute_mean()
 class TTSConverter(object):
     def __init__(self):
@@ -242,7 +252,7 @@ class CustomConverter(object):
         # ilens = torch.from_numpy(np.array([x.shape[0] for x in xs])).long().to(device)
         # xs_pad = pad_list([torch.from_numpy(x).float() for x in xs], 0).to(device)
 
-
+        
         eos = np.array([78])
         ys_phone_tts = [ np.concatenate([y,eos]) for y in ys_phone_tts ]
         
@@ -257,6 +267,7 @@ class CustomConverter(object):
                 ys_phone_pad = ys_phone_pad[index]
                 asr_char_olens = asr_char_olens[index]
                 spembs = spembs[index]
+                logging.info(ys_pad_asr)
                 return ys_pad_asr, ys_phone_pad, asr_char_olens, phn_olens, spembs
             except UnboundLocalError:
                 return xs_pad, ilens, ys_pad,olens
@@ -268,14 +279,14 @@ class CustomUpdater_all(training.StandardUpdater):
 
     def __init__(self,train_mode,tts2asr_model, asr_model, tts_model,
                 unpaired_iter,asr_paired_iter,tts_paired_iter,
-                optimizer_asr, optimizer_tts,scaler,
+                optimizer_asr, optimizer_tts,schedulers,scaler,
                 converter, tts_converter,asr_converter,
                 device, ngpu, use_kl, zero_att,asr2tts_policy,use_unpaired,args):
 
         # super(CustomUpdater_all, self).__init__({"unpaired":unpaired_iter, "tts":tts_paired_iter,"main":asr_paired_iter},
         # {"spk":optimizer_spk,"tts":optimizer_tts,"main":optimizer_asr})
         super(CustomUpdater_all, self).__init__({"asr":asr_paired_iter,"tts":tts_paired_iter,"main":unpaired_iter,},
-        {"tts":optimizer_tts,"main":optimizer_asr})
+        {"main":optimizer_asr,"tts":optimizer_tts})
         self.train_mode = train_mode
         self.tts2asr_model = tts2asr_model
         self.model = asr_model
@@ -292,12 +303,13 @@ class CustomUpdater_all(training.StandardUpdater):
         self.zero_att = zero_att
         self.asr2tts_policy = asr2tts_policy
         self.use_unpaired = use_unpaired
-        self.iteration = 0
+        #self.epoch = 0
         self.args = args
         self.asr_tts_update=0
         self.spk_acc = 0
         self.unpaired_augstep = 1
         self.mix_precision = args.mix_precision
+        self.scheduler = schedulers
     def update_core(self):
         loss = 0.0
         # self.unpaired_augstep += 1
@@ -307,31 +319,35 @@ class CustomUpdater_all(training.StandardUpdater):
         optimizer_tts = self.get_optimizer('tts')
         optimizer_asr = self.get_optimizer('main')
         # Get the next batch ( a list of json files)
+        epoch = unpaired_iter.epoch
+
+        
+        self.tts2asr_model.train()
         
         if self.args.update_tts2asr:
             unpaired_batch = unpaired_iter.next()
-            
+            is_new_epoch = unpaired_iter.epoch != epoch
         if self.args.update_asr:
             asr_batch = asr_paired_iter.next()
         else:
             asr_batch = None
 
         tts_batch = tts_paired_iter.next()
-        self.tts2asr_model.train()
+        #xs_pad, ilens, ys_pad, labels, olens, spembs= self.tts_converter(tts_batch,self.model_device)
         if self.args.mix_precision:
-            with autocast():
-                loss = self.tts2asr_model(asr_batch,None,unpaired_batch, iteration=self.iteration, use_spk=self.args.use_spk, model_device=self.model_device,unpaired_augstep=self.unpaired_augstep)
-                optimizer_asr.zero_grad()
-                optimizer_tts.zero_grad()
-                self.scaler.scale(loss).backward()
-                self.scaler.unscale_(optimizer_asr)
-                self.scaler.unscale_(optimizer_tts)
-        else:
-            loss = self.tts2asr_model(asr_batch,None,unpaired_batch, iteration=self.iteration, use_spk=self.args.use_spk, model_device=self.model_device,unpaired_augstep=self.unpaired_augstep)
             optimizer_asr.zero_grad()
             optimizer_tts.zero_grad()
-            loss.backward()
-
+            self.tts2asr_model.zero_grad()
+            with autocast():
+                tts2asr_loss = self.tts2asr_model(asr_batch,tts_batch,unpaired_batch, iteration=self.iteration, use_spk=self.args.use_spk, model_device=self.model_device,unpaired_augstep=self.unpaired_augstep)
+            self.scaler.scale(tts2asr_loss).backward()
+            self.scaler.unscale_(optimizer_tts)
+            self.scaler.unscale_(optimizer_asr)
+        else:
+            optimizer_asr.zero_grad()
+            optimizer_tts.zero_grad()
+            tts2asr_loss = self.tts2asr_model(asr_batch,None,unpaired_batch, iteration=self.iteration, use_spk=self.args.use_spk, model_device=self.model_device,unpaired_augstep=self.unpaired_augstep)
+            tts2asr_loss.backward()
         grad_norm_tts = torch.nn.utils.clip_grad_norm_(self.tts_model.parameters(),
                                                 self.tts_grad_clip)
         grad_norm_asr = torch.nn.utils.clip_grad_norm_(self.model.parameters(),
@@ -339,61 +355,20 @@ class CustomUpdater_all(training.StandardUpdater):
 
         logging.info('asr:iteration={},grad norm={}'.format(self.iteration,grad_norm_asr))
         logging.info('tts:iteration={},grad norm={}'.format(self.iteration,grad_norm_tts))
-        if self.args.update_asr:
-            if math.isnan(grad_norm_asr) or math.isinf(grad_norm_asr):
-                logging.warning('asr grad norm is nan or inf. Do not update model.')
-            else:
-                logging.info("asr update model")
-                if self.args.mix_precision:
-                    self.scaler.step(optimizer_asr)
-                else:
-                    optimizer_asr.step()
-        if (self.unpaired_augstep+1)%2==0 and self.args.unpaired_aug:
-            pass
+        if math.isnan(grad_norm_tts) or math.isinf(grad_norm_tts):
+            logging.warning('tts grad norm is nan or inf. Do not update model.')
         else:
-            if self.args.update_tts:
-                if math.isnan(grad_norm_tts) or math.isinf(grad_norm_tts):
-                    logging.warning('tts grad norm is nan or inf. Do not update model.')
-                else:
-                    logging.info("tts update model")
-                    if self.args.mix_precision:
-                        self.scaler.step(optimizer_tts)
-                    else:
-                        optimizer_tts.step()
+            logging.info("tts update model")
+            if self.args.mix_precision:
+                self.scaler.step(optimizer_tts)
+            else:
+                optimizer_tts.step()
         if self.args.mix_precision:
             self.scaler.update()
-
-        if self.args.update_tts:
-        #update tts
-            self.tts_model.train()
-            xs_pad, ilens, ys_pad, labels, olens, spembs= self.tts_converter(tts_batch,self.model_device)
-            if self.args.mix_precision:
-                with autocast():
-                    tts_loss = self.tts_model(xs_pad, ilens, ys_pad, labels, olens, spembs)
-                optimizer_tts.zero_grad()
-                self.scaler.scale(tts_loss).backward()
-                self.scaler.unscale_(optimizer_tts)
-            else:
-                tts_loss = self.tts_model(xs_pad, ilens, ys_pad, labels, olens, spembs)
-                optimizer_tts.zero_grad()
-                tts_loss.backward()
-
-            grad_norm_tts = torch.nn.utils.clip_grad_norm_(self.tts_model.parameters(),
-                                                    self.tts_grad_clip)
-
-            logging.info('tts:iteration={},grad norm={}'.format(self.iteration,grad_norm_tts))
-
-            if math.isnan(grad_norm_tts) or math.isinf(grad_norm_tts):
-                logging.warning('tts grad norm is nan or inf. Do not update model.')
-            else:
-                logging.info("tts update model")
-                if self.args.mix_precision:
-                    self.scaler.step(optimizer_tts)
-                else:
-                    optimizer_tts.step()
-            if self.args.mix_precision:
-                self.scaler.update()
-        
+        if is_new_epoch:
+            self.scheduler.step()
+            clr = [x['lr'] for x in optimizer_tts.param_groups]
+            logging.info("the learning rate is changed to %f"% max(clr))
     def update(self):
         self.update_core()
         # #iterations with accum_grad > 1
@@ -406,8 +381,18 @@ class CustomUpdater_all(training.StandardUpdater):
 
 
 
-def train(args):
+def train(local_rank,args):
     '''Run training'''
+    logging.info("false")
+    if not args.use_launch:
+        import torch.distributed as dist
+        args.local_rank = local_rank
+        rank = args.local_rank + args.node_rank * args.ngpu
+        logging.info(args.local_rank)
+        dist.init_process_group("nccl",
+                init_method="tcp://{}:{}".format(args.master_addr, args.master_port),
+                rank=rank,
+                world_size=args.world_size)
     
     set_deterministic_pytorch(args)
     # if args.use_unpaired == True:
@@ -482,11 +467,18 @@ def train(args):
     loss_fn,tts_args = load_tacotron_loss(args.tts_model_conf, args.tts_model, args, sa_reporter, \
                                 train_mode=args.train_mode, asr2tts_policy=args.asr2tts_policy)
 
+
   
     # set tts_mode 
     tts_model = loss_fn.model
+    if not args.update_tts:
+        if args.last_tts_model:
+            for n in last_tts_model.model.parameters():
+                n.requires_grad = False
+        for n in tts_model.parameters():
+            n.requires_grad = False
 
-
+    logging.info(chainer.__version__)
  
     # Setup a converter  load paired data(need speech,text and speaker embedding)
     converter = CustomConverter(1, args.use_speaker_embedding)
@@ -548,7 +540,10 @@ def train(args):
     
     # set torch device
     if args.parallel_mode == "ddp":
-        device = torch.device("cuda",args.local_rank)
+        if args.use_launch:
+            device = torch.device("cuda",args.local_rank)
+        else:
+            device = torch.device("cuda",rank)
     else:
         device = torch.device("cuda:0" if args.ngpu > 0 else "cpu")
     
@@ -557,7 +552,8 @@ def train(args):
     if args.parallel_mode == "ddp":
         tts2asr_model = DistributedDataParallel(tts2asr_model,device_ids=[args.local_rank],output_device=args.local_rank,find_unused_parameters=True)
         asr_model = DistributedDataParallel(asr_model,device_ids=[args.local_rank],output_device=args.local_rank)
-        loss_fn = DistributedDataParallel(loss_fn,device_ids=[args.local_rank],output_device=args.local_rank,find_unused_parameters=True)
+        if args.update_tts:
+            loss_fn = DistributedDataParallel(loss_fn,device_ids=[args.local_rank],output_device=args.local_rank,find_unused_parameters=True)
      
     else:
         tts2asr_model = DataParallel(tts2asr_model,device_ids=[i for i in range(args.ngpu)])
@@ -580,6 +576,8 @@ def train(args):
         tts_model.parameters(), rho=0.95, eps=args.eps)
     elif args.tts_opt == 'adam':
         tts_optimizer = torch.optim.Adam(tts_model.parameters(),lr=1e-5,eps=1e-6)
+        scheduler = torch.optim.lr_scheduler.StepLR(tts_optimizer, step_size=2, gamma=0.5)
+
 
     scaler = GradScaler()
     #scaler=None
@@ -615,13 +613,12 @@ def train(args):
         maxlen_out = 150   
         #load_output = False
     elif args.train_mode == 1: # only use unpaired text
-        maxlen_in = 400
-        maxlen_out = 100     
+        maxlen_in = 250
+        maxlen_out = 35    
         sort_key1 = "output"
 
-    train_subsets = []
     # correspond --train-json []  first path:unpaired data second data:paired data
-    unpaired_set = make_batchset(train_json[0], args.unpaired_batch_size, max_length_in=maxlen_out,
+    unpaired_set = make_batchset(train_json[0], args.unpaired_batch_size,
                                            max_length_out=maxlen_out, num_batches=args.minibatches,
                                            min_batch_size=1,
                                            shortest_first=use_sortagrad,
@@ -631,6 +628,8 @@ def train(args):
                                            batch_frames_in=args.batch_frames_in,
                                            batch_frames_out=args.batch_frames_out,
                                            batch_frames_inout=args.batch_frames_inout)
+    # logging.info(len(unpaired_set))
+    # sys.exit()
     
     asr_paired_set = make_batchset(train_json[1], args.asr_batch_size, args.maxlen_in,
                                            args.maxlen_out, args.minibatches,
@@ -644,6 +643,8 @@ def train(args):
                                            batch_frames_inout=args.batch_frames_inout)
     if use_sortagrad:
         batch_sort_key = "input"
+    maxlen_in=150
+    maxlen_out=400
     tts_paired_set = make_batchset(
         train_json[2],
         args.tts_batch_size,
@@ -676,7 +677,7 @@ def train(args):
         maxlen_in,
         maxlen_out,
         args.minibatches,
-        batch_sort_key="output",
+        batch_sort_key="input",
         min_batch_size=1,
         shortest_first=use_sortagrad,
         count=args.batch_count,
@@ -723,6 +724,8 @@ def train(args):
         from espnet.utils.dataset import TransformDataset
         unpaired_dataset = TransformDataset(unpaired_set, lambda data: [load_tr(data,data_aug=False,speaker_mode=False)])
         unpaired_sampler = torch.utils.data.distributed.DistributedSampler(unpaired_dataset)
+        if not args.use_launch:
+            args.n_iter_processes = 0
         unpaired_iter = ChainerDataLoader_joint(
         name="unpaired_data",dataset=unpaired_dataset,batch_size=1,collate_fn=lambda x: x[0],num_workers=args.n_iter_processes,sampler=unpaired_sampler,parallel_mode=args.parallel_mode)
 
@@ -784,6 +787,7 @@ def train(args):
         tts_paired_iter,
         asr_optimizer,
         tts_optimizer,
+        scheduler,
         scaler,
         converter,
         tts_converter,
@@ -803,12 +807,23 @@ def train(args):
         logging.info('resumed from %s' % args.resume)
         torch_joint_resume(args.resume, trainer)
     # Evaluate the model with the test dataset for each epoch
-    trainer.extend(CustomEvaluator(args,asr_model,loss_fn, asr_valid_iter,tts_valid_iter, reporter, asr_converter,tts_converter,device),trigger=(1,'epoch'))
+    if args.update_asr and  not args.update_tts:
+        log_acc = "validation/main/acc"
+        log_loss = "validation/main/loss_att"
+    else:
+        log_acc ="validation_1/main/acc"
+        log_loss = "validation_1/main/loss_att"
+        
+    if args.update_tts:
+        trainer.extend(CustomEvaluator_tts(args,loss_fn,tts_valid_iter, tts_reporter,tts_converter,device),trigger=(REPORT_INTERVAL, REPORT_TYPE))
+    if args.update_asr:
+        trainer.extend(CustomEvaluator_asr(args,asr_model, asr_valid_iter, reporter, asr_converter,device),trigger=(REPORT_INTERVAL, REPORT_TYPE))
+    
     if args.parallel_mode == "ddp":
         if args.local_rank==0:
             # logging.info(args.asr_valid_json)
             # logging.info(asr_valid_json)
-            log_manager(args,asr_model,tts_model,asr_converter,tts_converter,device,load_cv_asr,load_cv_tts,trainer,asr_valid_json,tts_valid_json,mtl_mode)
+            log_manager(args,asr_model,tts_model,asr_converter,tts_converter,device,load_cv_asr,load_cv_tts,trainer,asr_valid_json,tts_valid_json,mtl_mode,log_loss,log_acc)
     else:
         log_manager(args,asr_model,tts_model,asr_converter,tts_converter,device,load_cv_asr,load_cv_tts,trainer,asr_valid_json,tts_valid_json,mtl_mode)
 
@@ -819,26 +834,33 @@ def train(args):
             if args.criterion == 'acc' and mtl_mode != 'ctc':
                 trainer.extend(restore_snapshot(asr_model, args.outdir + '/model.acc.best', load_fn=torch_load),
                             trigger=CompareValueTrigger(
-                                'validation/main/asr_acc',
-                                lambda best_value, current_value: best_value > current_value)
+                                log_acc,
+                                lambda best_value, current_value: best_value > current_value
+                                ,trigger=(REPORT_INTERVAL, REPORT_TYPE))
                                 )
                 trainer.extend(adadelta_eps_decay(args.eps_decay),
                             trigger=CompareValueTrigger(
-                                'validation/main/asr_acc',
-                                lambda best_value, current_value: best_value > current_value))
+                                log_acc,
+                                lambda best_value, current_value: best_value > current_value
+                                ,trigger=(REPORT_INTERVAL, REPORT_TYPE))
+                                )
             elif args.criterion == 'loss':
                 trainer.extend(restore_snapshot(asr_model, args.outdir + '/model.loss.best', load_fn=torch_load),
                             trigger=CompareValueTrigger(
-                                'validation/main/asr_loss',
-                                lambda best_value, current_value: best_value < current_value))
+                                log_loss,
+                                lambda best_value, current_value: best_value < current_value
+                                ,trigger=(REPORT_INTERVAL, REPORT_TYPE))
+                                )
                 trainer.extend(adadelta_eps_decay(args.eps_decay),
                             trigger=CompareValueTrigger(
-                                'validation/main/asr_loss',
-                                lambda best_value, current_value: best_value < current_value))
+                                log_loss,
+                                lambda best_value, current_value: best_value < current_value
+                                ,trigger=(REPORT_INTERVAL, REPORT_TYPE))
+                                )
     # Run the training
     trainer.run()
 
-def log_manager(args,asr_model,tts_model,asr_converter,tts_converter,device,load_cv_asr,load_cv_tts,trainer,asr_valid_json,tts_valid_json,mtl_mode):
+def log_manager(args,asr_model,tts_model,asr_converter,tts_converter,device,load_cv_asr,load_cv_tts,trainer,asr_valid_json,tts_valid_json,mtl_mode,log_loss,log_acc):
      
     #logging.info(type(trainer))
     # Save attention weight each epoch
@@ -853,7 +875,7 @@ def log_manager(args,asr_model,tts_model,asr_converter,tts_converter,device,load
         trainer.extend(PlotAttentionReport(
             att_vis_fn, asr_data, args.outdir + "/att_ws_asr",
             converter=asr_converter, transform=load_cv_asr, device=device),
-            trigger=(1, 'epoch'))
+            trigger=(REPORT_INTERVAL, REPORT_TYPE))
         
 
 
@@ -886,41 +908,48 @@ def log_manager(args,asr_model,tts_model,asr_converter,tts_converter,device,load
             device=device,
             reverse=True,
         )
-        trainer.extend(att_reporter, trigger=(1, 'epoch'))
+        trainer.extend(att_reporter, trigger=(REPORT_INTERVAL, REPORT_TYPE))
 
     # Make a plot for training and validation values
-    trainer.extend(extensions.PlotReport(['main/asr_loss', 'main/kl_loss','tts2asr_loss_asr','asr2tts_loss',
-                                          'validation/main/asr_loss','validation/main/kl_loss'],
-                                         'epoch', file_name='loss.png'))
-    trainer.extend(extensions.PlotReport(['main/asr_acc','main/tts2asr_acc_asr',
-                                          'validation/main/asr_acc'],
-                                         'epoch', file_name='acc.png'))
-    trainer.extend(extensions.PlotReport(['main/asr_loss', 
-                                          'validation/main/asr_loss'],
-                                         'epoch', file_name='asr_loss.png'))
-    trainer.extend(extensions.PlotReport(['main/tts2asr_acc_tts'],
-                                         'epoch', file_name='tts2asr_acc_tts.png'))
-    trainer.extend(extensions.PlotReport(['main/tts2asr_loss_tts'],
-                                         'epoch', file_name='tts2asr_loss_tts.png'))
+    trainer.extend(extensions.PlotReport(['main/loss', 'tts/kl_loss','tts2asr_loss_asr','asr2tts_loss',
+                                          log_loss,'validation/tts/kl_loss'],
+                                         'epoch', file_name='loss.png',trigger=(REPORT_INTERVAL, REPORT_TYPE)))
+    trainer.extend(extensions.PlotReport(['tts/kl_loss','validation/tts/kl_loss'],
+                                         'epoch', file_name='KL_loss.png',trigger=(REPORT_INTERVAL, REPORT_TYPE)))
+    trainer.extend(extensions.PlotReport(['main/acc','tts/tts2asr_acc_asr',
+                                          log_acc],
+                                         'epoch', file_name='acc.png',trigger=(REPORT_INTERVAL, REPORT_TYPE)))
+    trainer.extend(extensions.PlotReport(['main/loss', 
+                                          log_loss],
+                                         'epoch', file_name='asr_loss.png',trigger=(REPORT_INTERVAL, REPORT_TYPE)))
+    trainer.extend(extensions.PlotReport(['tts/tts2asr_loss_asr'],
+                                         'epoch', file_name='tts2asr_loss_asr.png',trigger=(REPORT_INTERVAL, REPORT_TYPE)))
+    trainer.extend(extensions.PlotReport(['tts/tts2asr_acc_asr'],
+                                         'epoch', file_name='tts2asr_acc_asr.png',trigger=(REPORT_INTERVAL, REPORT_TYPE)))
     
     trainer.extend(extensions.PlotReport(['asr2tts_loss'],
-                                        'epoch', file_name='asr2tts_loss.png'))
-    trainer.extend(extensions.PlotReport(['main/tts_loss'],
-                                        'epoch', file_name='tts_loss.png'))
-    trainer.extend(extensions.PlotReport(['main/att_loss'],
-                                        'epoch', file_name='att_loss.png'))
-    trainer.extend(extensions.PlotReport(['main/mse_loss'],
-                                        'epoch', file_name='mse_loss.png'))
-    trainer.extend(extensions.PlotReport(['main/l1_loss'],
-                                        'epoch', file_name='l1_loss.png'))
-    trainer.extend(extensions.PlotReport(['main/bce_loss'],
-                                        'epoch', file_name='bce_loss.png'))
+                                        'epoch', file_name='asr2tts_loss.png',trigger=(REPORT_INTERVAL, REPORT_TYPE)))
+    trainer.extend(extensions.PlotReport(['tts/tts_loss',
+                                        'validation/main/tts_loss'],
+                                        'epoch', file_name='tts_loss.png',trigger=(REPORT_INTERVAL, REPORT_TYPE)))
+    trainer.extend(extensions.PlotReport(['tts/attn_loss',
+                                        'validation/main/attn_loss'],
+                                        'epoch', file_name='attn_loss.png',trigger=(REPORT_INTERVAL, REPORT_TYPE)))
+    trainer.extend(extensions.PlotReport(['main/mse_loss',
+                                        'validation/main/mse_loss'],
+                                        'epoch', file_name='mse_loss.png',trigger=(REPORT_INTERVAL, REPORT_TYPE)))
+    trainer.extend(extensions.PlotReport(['main/l1_loss',
+                                        'validation/main/bce_loss'],
+                                        'epoch', file_name='l1_loss.png',trigger=(REPORT_INTERVAL, REPORT_TYPE)))
+    trainer.extend(extensions.PlotReport(['tts/bce_loss',
+                                         'validation/main/bce_loss'],
+                                        'epoch', file_name='bce_loss.png',trigger=(REPORT_INTERVAL, REPORT_TYPE)))
         
     
-    trainer.extend(extensions.PlotReport(['main/tts2asr_acc_asr'],
-                                        'epoch', file_name='tts2asr_acc_asr.png'))
-    trainer.extend(extensions.PlotReport(['main/tts2asr_loss_asr'],
-                                        'epoch', file_name='tts2asr_loss_asr.png'))
+    trainer.extend(extensions.PlotReport(['tts/tts2asr_acc_asr'],
+                                        'epoch', file_name='tts2asr_acc_asr.png',trigger=(REPORT_INTERVAL, REPORT_TYPE)))
+    trainer.extend(extensions.PlotReport(['tts/tts2asr_loss_asr'],
+                                        'epoch', file_name='tts2asr_loss_asr.png',trigger=(REPORT_INTERVAL, REPORT_TYPE)))
 
 
 
@@ -928,47 +957,48 @@ def log_manager(args,asr_model,tts_model,asr_converter,tts_converter,device,load
     if args.update_asr:
         trainer.extend(
             snapshot_object(asr_model, "asr_model.loss.best"),
-            trigger=training.triggers.MinValueTrigger("validation/main/asr_loss")
+            trigger=training.triggers.MinValueTrigger(log_loss,trigger=(REPORT_INTERVAL, REPORT_TYPE))
             )
+        if mtl_mode != 'ctc':
+            trainer.extend(
+            snapshot_object(asr_model, 'model.acc.best'),
+                        trigger=training.triggers.MaxValueTrigger(log_acc,trigger=(REPORT_INTERVAL, REPORT_TYPE))
+                        )
     if args.update_tts:
         trainer.extend(
             snapshot_object(tts_model, "tts_model.loss.best"),
-            trigger=training.triggers.MinValueTrigger("main/tts_loss")
+            trigger=training.triggers.MinValueTrigger("tts/tts_loss",trigger=(REPORT_INTERVAL, REPORT_TYPE))
             )
     #trainer.extend(extensions.snapshot_object(asr_model, 'model.loss.best', savefun=torch_save),
     #               trigger=training.triggers.MinValueTrigger('validation/main/asr_loss_att',trigger=(REPORT_INTERVAL, 'iteration')))
-    if mtl_mode != 'ctc':
-        trainer.extend(
-            snapshot_object(asr_model, 'model.acc.best'),
-                       trigger=training.triggers.MaxValueTrigger('validation/main/asr_acc')
-                       )
+ 
         
 
     # save snapshot which contains model and optimizer states
-    trainer.extend(torch_joint_snapshot(),trigger=(1, 'epoch'))
+    trainer.extend(torch_joint_snapshot(),trigger=(REPORT_INTERVAL, REPORT_TYPE))
     #trainer.extend(torch_snapshot(),trigger=(REPORT_INTERVAL, 'iteration'))
 
     
 
     # Write a log of evaluation statistics for each epoch
-    trainer.extend(extensions.LogReport(trigger=(REPORT_INTERVAL, 'iteration')))
-    report_keys = ['epoch', 'iteration', 'main/asr_loss', 
+    trainer.extend(extensions.LogReport(trigger=(100, 'iteration')))
+    report_keys = ['epoch', 'iteration', 'main/loss', 
                    'main/tts2asr_loss_asr','main/asr2tts_loss','main/asr_acc', 'main/tts2asr_acc_asr',
                    'main/tts2asr_loss_tts','main/tts2asr_acc_tts',
-                   'validation/main/asr_loss','validation/main/asr_acc', 
+                   'validation/main/loss','validation/main/asr_acc', 
                    'main/tts_loss','main/att_loss','main/mse_loss','main/l1_loss','main/bce_loss'
                    'elapsed_time']
     if args.opt == 'adadelta':
         trainer.extend(extensions.observe_value(
             'eps', lambda trainer: trainer.updater.get_optimizer('main').param_groups[0]["eps"]),
-            trigger=(REPORT_INTERVAL, 'iteration'))
+            trigger=(100, 'iteration'))
         report_keys.append('eps')
     if args.report_cer:
         report_keys.append('validation/main/cer')
     if args.report_wer:
         report_keys.append('validation/main/wer')
-    trainer.extend(extensions.PrintReport(
-        report_keys), trigger=(REPORT_INTERVAL, 'iteration'))
+    # trainer.extend(extensions.PrintReport(
+    #     report_keys), trigger=(REPORT_INTERVAL, 'iteration'))
 
     #trainer.extend(extensions.ProgressBar(update_interval=REPORT_INTERVAL))
 
@@ -981,6 +1011,7 @@ def log_manager(args,asr_model,tts_model,asr_converter,tts_converter,device,load
             ),
             trigger=(REPORT_INTERVAL, "iteration"),
         )
+
 
 def recog(args):
     """Decode with the given args.

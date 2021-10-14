@@ -28,7 +28,7 @@ decode_asr_config=conf/decode_asr.yaml
 fs=16000      # sampling frequency
 fmax=""       # maximum frequency
 fmin=""       # minimum frequency
-n_mels=128    # number of mel basis(if you haven't enough memory, you can set it to 80)
+n_mels=80    # number of mel basis(if you haven't enough memory, you can set it to 80)
 n_fft=800    # number of fft points
 n_shift=160   # number of shift points
 win_length="" # window length
@@ -50,7 +50,7 @@ datadir=
 # bpemode (unigram or bpe)
 nbpe=5000
 bpemode=bpe
-use_bpe=false
+use_bpe=true
 
 # training related
 tag=baseline
@@ -117,15 +117,18 @@ if [ ${stage} -le 1 ] && [ ${stop_stage} -ge 1 ]; then
     remove_longshortdata.sh --maxframes 3000 --maxchars 400 $result_prefix/data/${dev_set}_org $result_prefix/data/${dev_set}
     remove_longshortdata.sh --maxframes 3000 --maxchars 400 $result_prefix/data/${train_set}_org $result_prefix/data/${train_set}
     
-    compute-cmvn-stats scp:$result_prefix/data/${train_set}/feats.scp $result_prefix/data/${train_set}/cmvn.ark
+    # It is better to use same CMVN for ASR and TTS training.
+    #compute-cmvn-stats scp:$result_prefix/data/${train_set}/feats.scp $result_prefix/data/${train_set}/cmvn.ark
+    cat $result_prefix/data/${train_set}/feats.scp ../../libritts/tts1/data/train_clean_460/feats.scp $result_prefix/data/${train_set}/feats_all.scp
+    compute-cmvn-stats scp:$result_prefix/data/${train_set}/feats_all.scp $result_prefix/data/${train_set}/cmvn_all.ark
 
     dump.sh --cmd "$train_cmd" --nj ${nj} --do_delta false \
-            $result_prefix/data/${train_set}/feats.scp $result_prefix/data/${train_set}/cmvn.ark  $result_prefix/data/exp/dump_feats/train ${feat_tr_dir}
+            $result_prefix/data/${train_set}/feats.scp $result_prefix/data/${train_set}/cmvn_all.ark  $result_prefix/data/exp/dump_feats/train ${feat_tr_dir}
 
     dump.sh --cmd "$train_cmd" --nj ${nj} --do_delta false \
-        $result_prefix/data/${dev_set}/feats.scp $result_prefix/data/${train_set}/cmvn.ark  $result_prefix/data/exp/dump_feats/dev ${feat_dt_dir}
+        $result_prefix/data/${dev_set}/feats.scp $result_prefix/data/${train_set}/cmvn_all.ark  $result_prefix/data/exp/dump_feats/dev ${feat_dt_dir}
     dump.sh --cmd "$train_cmd" --nj ${nj} --do_delta false \
-        $result_prefix/data/${eval_set}/feats.scp  $result_prefix/data/${train_set}/cmvn.ark $result_prefix/exp/dump_feats/eval ${feat_ev_dir}
+        $result_prefix/data/${eval_set}/feats.scp  $result_prefix/data/${train_set}/cmvn_all.ark $result_prefix/exp/dump_feats/eval ${feat_ev_dir}
 fi
 
 if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ]; then

@@ -49,7 +49,7 @@ fi
 if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ]; then
     echo "stage 2: feature extraction"
     fbankdir=$result_prefix/fbank
-    cmvn_path=$asr_dir/data/train_clean_460/cmvn.ark
+    cmvn_path=$asr_dir/data/train_clean_460/cmvn_all.ark
     asr_dict=$asr_dir/data/lang_char/train_clean_460_units.txt
     for x in dev test train; do
         make_fbank.sh --cmd "${train_cmd}" --nj ${nj} \
@@ -140,16 +140,4 @@ if [ ${stage} -le 5 ] && [ ${stop_stage} -ge 5 ]; then
                                         $result_prefix/dump/train/data.json \
                                         0 \
                                         $result_prefix/dump/train/data_adap.json 
-
-    python local/generate_unpaired.py $result_prefix/exp/xvector_nnet_1a/xvectors_test/xvector.scp \
-                                        $result_prefix/dump/train/data_phone.json \
-                                        $result_prefix/dump/train/data.json \
-                                        1 \
-                                        $result_prefix/dump/train/data_one_shot_adap.json 
-
-    python local/generate_unpaired.py $result_prefix/exp/xvector_nnet_1a/xvectors_test/xvector.scp \
-                                        $result_prefix/dump/train/data_phone.json \
-                                        $result_prefix/dump/train/data.json \
-                                        5 \
-                                        $result_prefix/dump/train/data_one_shot_adap.json 
 fi

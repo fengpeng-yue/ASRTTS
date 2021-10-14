@@ -21,7 +21,7 @@ resume=""    # the snapshot path to resume (if set empty, no effect)
 fs=16000      # sampling frequency
 fmax=""       # maximum frequency
 fmin=""       # minimum frequency
-n_mels=128     # number of mel basis(if you haven't enough memory, you can set it to 80)
+n_mels=80     # number of mel basis(if you haven't enough memory, you can set it to 80)
 n_fft=800    # number of fft points
 n_shift=160   # number of shift points
 win_length="" # window length
@@ -122,7 +122,10 @@ if [ ${stage} -le 1 ] && [ ${stop_stage} -ge 1 ]; then
     remove_longshortdata.sh --maxframes $maxframes --maxchars 400 $result_prefix/data/${dev_set}_org $result_prefix/data/${dev_set}
 
     #compute statistics for global mean-variance normalization
-    compute-cmvn-stats scp:$result_prefix/data/${train_set}/feats.scp $result_prefix/data/${train_set}/cmvn.ark
+    #compute-cmvn-stats scp:$result_prefix/data/${train_set}/feats.scp $result_prefix/data/${train_set}/cmvn.ark
+
+    # We use the same CMVN for ASR and TTS traninig.
+    CMVN_path=../../librispeech/asr1/data/train_clean_460/cmvn_all.scp
 fi
 if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ]; then
     local/clean_text.py $result_prefix/data/${train_set}/text $trans_type > $result_prefix/data/${train_set}/text_phone
@@ -138,13 +141,14 @@ if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ]; then
 fi
 
 if [ ${stage} -le 3 ] && [ ${stop_stage} -ge 3 ]; then
-    dump.sh --cmd "$train_cmd" --nj ${nj} --do_delta false \
-        $result_prefix/data/${train_set}/feats.scp $result_prefix/data/${train_set}/cmvn.ark $result_prefix/exp/dump_feats/train ${feat_tr_dir}
 
     dump.sh --cmd "$train_cmd" --nj ${nj} --do_delta false \
-        $result_prefix/data/${dev_set}/feats.scp $result_prefix/data/${train_set}/cmvn.ark $result_prefix/exp/dump_feats/dev ${feat_dt_dir}
+        $result_prefix/data/${train_set}/feats.scp $CMVN_path $result_prefix/exp/dump_feats/train ${feat_tr_dir}
+
     dump.sh --cmd "$train_cmd" --nj ${nj} --do_delta false \
-        $result_prefix/data/${eval_set}/feats.scp $result_prefix/data/${train_set}/cmvn.ark $result_prefix/exp/dump_feats/eval ${feat_ev_dir}
+        $result_prefix/data/${dev_set}/feats.scp $CMVN_path $result_prefix/exp/dump_feats/dev ${feat_dt_dir}
+    dump.sh --cmd "$train_cmd" --nj ${nj} --do_delta false \
+        $result_prefix/data/${eval_set}/feats.scp $CMVN_path $result_prefix/exp/dump_feats/eval ${feat_ev_dir}
     data2json.sh --feat ${feat_dt_dir}/feats.scp --trans_type ${trans_type} --text $result_prefix/data/${dev_set}/text_phone\
             $result_prefix/data/${dev_set} ${dict} > ${feat_dt_dir}/data_phone.json
     data2json.sh --feat ${feat_ev_dir}/feats.scp --trans_type ${trans_type} --text $result_prefix/data/${eval_set}/text_phone\

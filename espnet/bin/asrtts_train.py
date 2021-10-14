@@ -16,7 +16,7 @@ import numpy as np
 
 from espnet.utils.cli_utils import strtobool
 from espnet.utils.training.batchfy import BATCH_COUNT_CHOICES
-
+import torch.multiprocessing as mp
 
 # NOTE: you need this func to generate our sphinx doc
 def get_parser():
@@ -85,26 +85,7 @@ def get_parser():
                         choices=['builtin', 'warpctc'],
                         help='Type of CTC implementation to calculate loss.')
     # attention
-    parser.add_argument('--atype', default='dot', type=str,
-                        choices=['noatt', 'dot', 'add', 'location', 'coverage',
-                                 'coverage_location', 'location2d', 'location_recurrent',
-                                 'multi_head_dot', 'multi_head_add', 'multi_head_loc',
-                                 'multi_head_multi_res_loc'],
-                        help='Type of attention architecture')
-    parser.add_argument('--adim', default=320, type=int,
-                        help='Number of attention transformation dimensions')
-    parser.add_argument('--awin', default=5, type=int,
-                        help='Window size for location2d attention')
-    parser.add_argument('--aheads', default=4, type=int,
-                        help='Number of heads for multi head attention')
-    parser.add_argument('--aconv-chans', default=-1, type=int,
-                        help='Number of attention convolution channels \
-                        (negative value indicates no location-aware attention)')
-    parser.add_argument('--aconv-filts', default=100, type=int,
-                        help='Number of attention convolution filters \
-                        (negative value indicates no location-aware attention)')
-    parser.add_argument('--spa', action='store_true',
-                        help='Enable speaker parallel attention.')
+  
     # decoder
     parser.add_argument('--dtype', default='lstm', type=str,
                         choices=['lstm', 'gru'],
@@ -220,71 +201,13 @@ def get_parser():
                         help='The flag to switch to use frontend system.')
 
     # WPE related
-    parser.add_argument('--use-wpe', type=strtobool, default=False,
-                        help='Apply Weighted Prediction Error')
-    parser.add_argument('--wtype', default='blstmp', type=str,
-                        choices=['lstm', 'blstm', 'lstmp', 'blstmp', 'vgglstmp', 'vggblstmp', 'vgglstm', 'vggblstm',
-                                 'gru', 'bgru', 'grup', 'bgrup', 'vgggrup', 'vggbgrup', 'vgggru', 'vggbgru'],
-                        help='Type of encoder network architecture '
-                             'of the mask estimator for WPE. '
-                             '')
-    parser.add_argument('--wlayers', type=int, default=2,
-                        help='')
-    parser.add_argument('--wunits', type=int, default=300,
-                        help='')
-    parser.add_argument('--wprojs', type=int, default=300,
-                        help='')
-    parser.add_argument('--wdropout-rate', type=float, default=0.0,
-                        help='')
-    parser.add_argument('--wpe-taps', type=int, default=5,
-                        help='')
-    parser.add_argument('--wpe-delay', type=int, default=3,
-                        help='')
-    parser.add_argument('--use-dnn-mask-for-wpe', type=strtobool,
-                        default=False,
-                        help='Use DNN to estimate the power spectrogram. '
-                             'This option is experimental.')
+
     # Beamformer related
-    parser.add_argument('--use-beamformer', type=strtobool,
-                        default=True, help='')
-    parser.add_argument('--btype', default='blstmp', type=str,
-                        choices=['lstm', 'blstm', 'lstmp', 'blstmp', 'vgglstmp', 'vggblstmp', 'vgglstm', 'vggblstm',
-                                 'gru', 'bgru', 'grup', 'bgrup', 'vgggrup', 'vggbgrup', 'vgggru', 'vggbgru'],
-                        help='Type of encoder network architecture '
-                             'of the mask estimator for Beamformer.')
-    parser.add_argument('--blayers', type=int, default=2,
-                        help='')
-    parser.add_argument('--bunits', type=int, default=300,
-                        help='')
-    parser.add_argument('--bprojs', type=int, default=300,
-                        help='')
-    parser.add_argument('--badim', type=int, default=320,
-                        help='')
-    parser.add_argument('--ref-channel', type=int, default=-1,
-                        help='The reference channel used for beamformer. '
-                             'By default, the channel is estimated by DNN.')
-    parser.add_argument('--bdropout-rate', type=float, default=0.0,
-                        help='')
+
     # Feature transform: Normalization
-    parser.add_argument('--stats-file', type=str, default=None,
-                        help='The stats file for the feature normalization')
-    parser.add_argument('--apply-uttmvn', type=strtobool, default=True,
-                        help='Apply utterance level mean '
-                             'variance normalization.')
-    parser.add_argument('--uttmvn-norm-means', type=strtobool,
-                        default=True, help='')
-    parser.add_argument('--uttmvn-norm-vars', type=strtobool, default=False,
-                        help='')
+
     # Feature transform: Fbank
-    parser.add_argument('--fbank-fs', type=int, default=16000,
-                        help='The sample frequency used for '
-                             'the mel-fbank creation.')
-    parser.add_argument('--n-mels', type=int, default=80,
-                        help='The number of mel-frequency bins.')
-    parser.add_argument('--fbank-fmin', type=float, default=0.,
-                        help='')
-    parser.add_argument('--fbank-fmax', type=float, default=None,
-                        help='')
+
 
     # cycle-consistency related
     parser.add_argument('--asr-model', default='', type=str,
@@ -293,6 +216,8 @@ def get_parser():
                         help='ASR initial model conf')
     parser.add_argument('--tts-model', default='', type=str,
                         help='TTS model for cycle-consistency loss')
+    parser.add_argument('--last-tts-model', default='', nargs='?',
+                        help='Last TTS model for cycle-consistency loss')
     parser.add_argument('--tts-model-conf', default='', type=str,
                         help='TTS model conf for cycle-consistency loss')
     parser.add_argument('--expected-loss', default='tts', type=str,
@@ -301,11 +226,8 @@ def get_parser():
     parser.add_argument('--generator', default='tts', type=str,
                         choices=['tts', 'tte'],
                         help='Type of generator (tts, tte, ...)')
-    parser.add_argument('--rnnloss', default='ce', type=str,
-                        choices=['ce', 'kl', 'kld', 'mmd'],
-                        help='RNNLM loss function')
-    parser.add_argument('--n-samples-per-input', default=5, type=int,
-                        help='Number of samples per input generated from model')
+
+
     parser.add_argument('--sample-maxlenratio', default=0.8, type=float,
                         help='Maximum length ratio of each sample to input length')
     parser.add_argument('--sample-minlenratio', default=0.2, type=float,
@@ -339,18 +261,19 @@ def get_parser():
                         help='Zero Att for TTS->ASR')
     parser.add_argument('--softargmax', default=False, type=strtobool,
                         help='Soft assignment of token embeddings to TTS input')
-    parser.add_argument('--lm-loss-weight', default=1.0, type=float,
-                        help='LM loss weight')
 
-    # speech translation related ( for running )
-    parser.add_argument('--mt-model', default=None, type=str, nargs='?',
-                        help='Pre-trained MT model')
-    parser.add_argument('--replace-sos', default=False, nargs='?',
-                        help='Replace <sos> in the decoder with a target language ID \
-                              (the first token in the target sequence)')
+
+    parser.add_argument('--tts-loss-weight', default=0.01, type=float,
+                        help='tts loss weight')
+
+    # filter data
+    parser.add_argument('--filter-data', default=False, type=strtobool,
+                    help='whether filter data during training')
+    parser.add_argument('--filter-thre', default=0.4, type=float,
+                    help='the threshold for filtering data by focus rate')
 
     # mode option
-    parser.add_argument('--train-mode', default=0, type=int,
+    parser.add_argument('--train-mode', default=1, type=int,
                         help='use whice unpaired data')
     parser.add_argument('--use-kl',default=True,type=strtobool,
                         help='whether use kl divergence')
@@ -359,9 +282,7 @@ def get_parser():
                         help="how to update asr->tts method")
     parser.add_argument('--use-unpaired',default=False,type=strtobool,
                         help="whether to use unpaired data")
-    # parser.add_argument('--use-aug',default=True,type=strtobool,
-    #                     help="whether to use sepcaugment")
-    parser.add_argument('--new-docker',default=False,type=strtobool)
+
     parser.add_argument('--shuffle-spk',default=False,type=strtobool)
 
     parser.add_argument('--asr-opt', default='adadelta', type=str,
@@ -394,7 +315,7 @@ def get_parser():
     parser.add_argument('--update-tts2asr',default=False,type=strtobool,
                         help="whether update tts2asr model")
     parser.add_argument('--update-spk',default=False,type=strtobool,
-                        help="whether update spkeaer model")
+                        help="whether update speaker model")
     parser.add_argument('--use-spk',default=True,type=strtobool,
                         help="whether use speaker model for joint traing")
     parser.add_argument('--use-inference',default=False,type=strtobool,
@@ -407,11 +328,19 @@ def get_parser():
                         help="whether use mix precision for joint traing")
     parser.add_argument('--spk-loss',default="dist",nargs="?",type=str,
                         help="speaker loss for joint speaker model")
+    parser.add_argument('--asr-mode',default=1,type=int,
+                        help="wheter use generated samples on unpaired data to train asr")
     
     # data parallel
     parser.add_argument("--local_rank",default=0, type=int)
     parser.add_argument('--parallel-mode',default='dp',type=str,choices=['dp','ddp'],
                     help="how to data parallel")
+    parser.add_argument("--world_size", type=int)
+    parser.add_argument("--node_rank", type=int)
+    parser.add_argument("--master_addr", default="127.0.0.1", type=str)
+    parser.add_argument("--master_port", default="12355", type=str)
+    parser.add_argument("--use_launch",default=False,type=strtobool)
+
     return parser
 
 
@@ -491,10 +420,15 @@ def main(cmd_args):
             if args.parallel_mode == 'ddp':
                 import torch
                 import torch.distributed as dist
-                torch.cuda.set_device(args.local_rank)
-                dist.init_process_group(backend='nccl',init_method='env://')
-            from espnet.asr.pytorch_backend.asrtts import train
-            train(args)
+                if args.use_launch:
+                    torch.cuda.set_device(args.local_rank)
+                    dist.init_process_group(backend='nccl',init_method='env://')
+                    from espnet.asr.pytorch_backend.asrtts import train
+                    train(args.local_rank,args)
+                else:
+                    from espnet.asr.pytorch_backend.asrtts import train
+                    mp.spawn(train,(args,),nprocs=args.ngpu,join=True)
+            
         else:
             raise ValueError("Only chainer and pytorch are supported.")
     elif args.num_spkrs > 1:
