@@ -16,6 +16,7 @@ Run ./prepare_data.sh for preparing json file for training, and then run ./joint
 ## Experimental options in joint_training.sh
 ### Stage 1:
 update_asr=true 
+
 update_tts=false 
 update_tts2asr=true 
 filter_data=true 
