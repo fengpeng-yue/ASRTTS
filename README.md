@@ -23,21 +23,21 @@ filter_thre=0.58
 unpaired_aug=true   
 
 ### Stage 2:
-asrexpdir=    # change the path of asr baseline to the asr adaptation
-update_asr=false
-update_tts=true
-update_tts2asr=true
-filter_data=false
-unpaired_aug=flase
-tts_loss_weight=0.005
+asrexpdir=    # change the path of asr baseline to the asr adaptation  
+update_asr=false  
+update_tts=true  
+update_tts2asr=true  
+filter_data=false  
+unpaired_aug=flase  
+tts_loss_weight=0.005  
 
 ### Stage 3:
-ttsexpdir=  # change the path of tts baseline to the asr adaptation
-update_asr=false
-update_tts=true
-update_tts2asr=true
-filter_data=true
-filter_thre=0.58 
-unpaired_aug=true 
+ttsexpdir=  # change the path of tts baseline to the asr adaptation  
+update_asr=false  
+update_tts=true  
+update_tts2asr=true  
+filter_data=true  
+filter_thre=0.58   
+unpaired_aug=true   
 
 
