@@ -76,15 +76,13 @@ tts_dir=../../libritts/tts1
 ttsexpdir=${tts_dir}/exp/train_clean_460_pytorch_baseline
 
 
-last_ttsexpdir=${tts_dir}/exp/train_clean_460_pytorch_baseline
+
 tts_paired_data=${tts_dir}/dump/train_clean_460/data_phone_tts.json
 tts_dev_json=${tts_dir}/dump/dev_clean/data_phone_tts.json
 
 
 tts_model=$ttsexpdir/results/model.loss.best
 tts_model_conf=$ttsexpdir/results/model.json
-#last_tts_model=$last_ttsexpdir/results/model.loss.best
-last_tts_model=
 
 
 feat_tr_up_dir=$result_prefix/dump_asrtts/train
@@ -153,7 +151,6 @@ if [ $asrtts_train == 'true' ]; then
     --asr-model $asr_model \
     --tts-model-conf $tts_model_conf \
     --tts-model $tts_model \
-    --last-tts-model ${last_tts_model} \
     --parallel-mode ${parallel_mode} \
     --shuffle-spk ${shuffle_spk} \
     --asr-batch-size ${asr_batch_size} \
