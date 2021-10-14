@@ -8,12 +8,12 @@ You should use torch==1.7.1.
 You should download [LibriSpeech](http://www.openslr.org/12/) and [LibriTTS](http://www.openslr.org/60/) manually.  
 LibriSpeech: run ./pretrain_asr.sh under egs/librispeech/asr (The recipe train ASR model on LibriSpeech train-clean-460)  
 LibriTTS: run ./pretrain_tts.sh under egs/libritts/tts (The recipe train TTS model on LibriTTS train-clean-460)
-# Joint training
+# Adaptation training
 You should download [TED-LIUM-1](http://www.openslr.org/7/) manually.
 We give the punctuated TED_LIUM  text under egs/tedlium/data path.  
 Execution directory(egs/tedlium/asrtts):  
 Run ./prepare_data.sh for preparing json file for training, and then run ./joint_training.sh for joint training.
-## Experimental options in joint_training.sh for three-stage training
+## Experimental options in joint_training.sh for the three-stage training
 ### Stage 1:
 update_asr=true  
 update_tts=false  
