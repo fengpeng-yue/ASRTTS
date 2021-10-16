@@ -32,7 +32,7 @@ unpaired_aug=flase
 tts_loss_weight=0.005  
 
 ### Stage 3:
-ttsexpdir=  # change the path of tts baseline to the asr adaptation  
+ttsexpdir=  # change the path of tts baseline to the tts adaptation  
 update_asr=false  
 update_tts=true  
 update_tts2asr=true  
