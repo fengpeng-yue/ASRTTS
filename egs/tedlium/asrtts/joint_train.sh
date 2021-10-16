@@ -62,8 +62,6 @@ result_prefix=$(pwd)
 
 asr_dir=../../librispeech/asr1
 asrexpdir=${asr_dir}/exp/asr_baseline
-asrexpdir=exp/asrtts_joint_traing_only_update_asr_bpe
-
 asr_paired_data=${asr_dir}/dump/train_clean_460/data.json
 asr_dev_json=dump/dev/data.json
 asr_model_conf=$asrexpdir/results/model.json
@@ -74,13 +72,8 @@ asr_dict=${asr_dir}/data/lang_char/train_clean_460_units.txt
 
 tts_dir=../../libritts/tts1
 ttsexpdir=${tts_dir}/exp/train_clean_460_pytorch_baseline
-
-
-
 tts_paired_data=${tts_dir}/dump/train_clean_460/data_phone_tts.json
 tts_dev_json=${tts_dir}/dump/dev_clean/data_phone_tts.json
-
-
 tts_model=$ttsexpdir/results/model.loss.best
 tts_model_conf=$ttsexpdir/results/model.json
 
