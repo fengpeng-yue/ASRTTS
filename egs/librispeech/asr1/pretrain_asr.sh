@@ -119,7 +119,7 @@ if [ ${stage} -le 1 ] && [ ${stop_stage} -ge 1 ]; then
     
     # It is better to use same CMVN for ASR and TTS training.
     #compute-cmvn-stats scp:$result_prefix/data/${train_set}/feats.scp $result_prefix/data/${train_set}/cmvn.ark
-    cat $result_prefix/data/${train_set}/feats.scp ../../libritts/tts1/data/train_clean_460/feats.scp $result_prefix/data/${train_set}/feats_all.scp
+    cat $result_prefix/data/${train_set}/feats.scp ../../libritts/tts1/data/train_clean_460/feats.scp > $result_prefix/data/${train_set}/feats_all.scp
     compute-cmvn-stats scp:$result_prefix/data/${train_set}/feats_all.scp $result_prefix/data/${train_set}/cmvn_all.ark
 
     dump.sh --cmd "$train_cmd" --nj ${nj} --do_delta false \
